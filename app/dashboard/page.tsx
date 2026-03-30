@@ -36,6 +36,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<EventWithParticipants[]>([])
   const [copied, setCopied] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [expandedParticipants, setExpandedParticipants] = useState<Set<string>>(new Set())
 
   function load() {
     const ids = getAllEventIds()
@@ -124,13 +125,12 @@ export default function DashboardPage() {
           {data.map(({ event, participants }) => {
             const url = getEventUrl(event.id)
             const isFull = participants.length >= event.capacity
-            const recent = [...participants]
-              .sort(
-                (a, b) =>
-                  new Date(b.joinedAt).getTime() -
-                  new Date(a.joinedAt).getTime()
-              )
-              .slice(0, 5)
+            const isExpanded = expandedParticipants.has(event.id)
+            const sorted = [...participants].sort(
+              (a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime()
+            )
+            const displayed = isExpanded ? sorted : sorted.slice(0, 5)
+            const hasMore = participants.length > 5
 
             return (
               <div key={event.id} className="card">
@@ -218,16 +218,6 @@ export default function DashboardPage() {
                 {/* Quick links */}
                 <div className="flex gap-2 mt-3">
                   <Link
-                    href={`/event/${event.id}`}
-                    className="flex-1 text-center text-xs font-bold py-2 rounded-full"
-                    style={{
-                      background: '#06C755',
-                      color: '#fff',
-                    }}
-                  >
-                    👥 参加者ページ
-                  </Link>
-                  <Link
                     href={`/chat/${event.id}`}
                     className="flex-1 text-center text-xs font-bold py-2 rounded-full"
                     style={{
@@ -240,22 +230,18 @@ export default function DashboardPage() {
                   </Link>
                 </div>
 
-                {/* Recent participants */}
-                {recent.length > 0 && (
+                {/* Participants */}
+                {sorted.length > 0 && (
                   <div className="mt-3">
                     <p className="text-xs font-bold mb-2" style={{ color: '#888' }}>
-                      最近の参加者
+                      参加者一覧
                     </p>
                     <div className="flex flex-col gap-1.5">
-                      {recent.map((p) => (
+                      {displayed.map((p) => (
                         <div key={p.id} className="flex items-center gap-2">
                           <div
                             className="flex-shrink-0 flex items-center justify-center rounded-full text-white text-xs font-bold"
-                            style={{
-                              width: 28,
-                              height: 28,
-                              background: getAvatarColor(p.name),
-                            }}
+                            style={{ width: 28, height: 28, background: getAvatarColor(p.name) }}
                           >
                             {p.name.charAt(0)}
                           </div>
@@ -273,10 +259,19 @@ export default function DashboardPage() {
                         </div>
                       ))}
                     </div>
-                    {participants.length > 5 && (
-                      <p className="text-xs mt-2" style={{ color: '#888' }}>
-                        他 {participants.length - 5}名が参加中
-                      </p>
+                    {hasMore && (
+                      <button
+                        onClick={() => setExpandedParticipants((prev) => {
+                          const next = new Set(prev)
+                          if (isExpanded) next.delete(event.id)
+                          else next.add(event.id)
+                          return next
+                        })}
+                        className="text-xs mt-2 font-bold"
+                        style={{ color: '#06C755', background: 'none', border: 'none', cursor: 'pointer' }}
+                      >
+                        {isExpanded ? '▲ 折りたたむ' : `▼ 他${participants.length - 5}名を表示`}
+                      </button>
                     )}
                   </div>
                 )}
