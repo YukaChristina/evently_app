@@ -20,6 +20,8 @@ export default function EventForm() {
     capacity: '30',
     detail: '📍 港区六本木4-5-6 タワー8F ／ 💰 3,500円（当日精算）／ 🥂 軽食・ドリンク付き',
   })
+  const [reminderEnabled, setReminderEnabled] = useState(false)
+  const [reminderTime, setReminderTime] = useState('09:00')
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({})
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -42,8 +44,18 @@ export default function EventForm() {
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
-    setErrors((prev) => ({ ...prev, [e.target.name]: undefined }))
+    const { name, value } = e.target
+    setForm((prev) => {
+      const next = { ...prev, [name]: value }
+      // 開始日時が変わったら終了日時のデフォルトも更新（未入力 or 開始より前の場合）
+      if (name === 'dateStart' && value) {
+        if (!prev.dateEnd || prev.dateEnd <= value) {
+          next.dateEnd = value
+        }
+      }
+      return next
+    })
+    setErrors((prev) => ({ ...prev, [name]: undefined }))
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -68,7 +80,6 @@ export default function EventForm() {
       // Find or create community
       let community = await getDefaultCommunity()
       if (!community || community.name !== form.community.trim()) {
-        // Try to find by name
         const { data: found } = await supabase
           .from('communities')
           .select('*')
@@ -78,7 +89,6 @@ export default function EventForm() {
         if (found) {
           community = found
         } else {
-          // Create new community
           const { data: created } = await supabase
             .from('communities')
             .insert({
@@ -164,8 +174,23 @@ export default function EventForm() {
         role: 'organizer',
       })
 
+      // リマインド登録
+      if (reminderEnabled && form.dateStart) {
+        const eventDate = new Date(form.dateStart)
+        const [h, m] = reminderTime.split(':').map(Number)
+        const remindAt = new Date(eventDate)
+        remindAt.setDate(remindAt.getDate() - 1)
+        remindAt.setHours(h, m, 0, 0)
+        await supabase.from('reminders').insert({
+          event_id: event.id,
+          remind_at: remindAt.toISOString(),
+          channel: 'email',
+          status: 'pending',
+        })
+      }
+
       router.push('/dashboard')
-    } catch (err) {
+    } catch {
       setErrorMsg('エラーが発生しました。Supabaseの設定を確認してください。')
       setSubmitting(false)
     }
@@ -174,10 +199,7 @@ export default function EventForm() {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {errorMsg && (
-        <div
-          className="p-3 rounded-xl text-sm"
-          style={{ background: '#fff0f0', color: '#ff4d4f' }}
-        >
+        <div className="p-3 rounded-xl text-sm" style={{ background: '#fff0f0', color: '#ff4d4f' }}>
           {errorMsg}
         </div>
       )}
@@ -191,11 +213,7 @@ export default function EventForm() {
           onChange={handleChange}
           placeholder="例：MBA卒業生 春の交流会2026"
         />
-        {errors.title && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.title}
-          </p>
-        )}
+        {errors.title && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.title}</p>}
       </div>
 
       <div>
@@ -207,11 +225,7 @@ export default function EventForm() {
           onChange={handleChange}
           placeholder="例：MBA同窓会"
         />
-        {errors.community && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.community}
-          </p>
-        )}
+        {errors.community && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.community}</p>}
       </div>
 
       <div>
@@ -223,11 +237,7 @@ export default function EventForm() {
           value={form.dateStart}
           onChange={handleChange}
         />
-        {errors.dateStart && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.dateStart}
-          </p>
-        )}
+        {errors.dateStart && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.dateStart}</p>}
       </div>
 
       <div>
@@ -238,6 +248,7 @@ export default function EventForm() {
           className="input-field"
           value={form.dateEnd}
           onChange={handleChange}
+          min={form.dateStart}
         />
       </div>
 
@@ -250,11 +261,7 @@ export default function EventForm() {
           onChange={handleChange}
           placeholder="例：渋谷エリア（参加者全員に公開）"
         />
-        {errors.placePublic && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.placePublic}
-          </p>
-        )}
+        {errors.placePublic && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.placePublic}</p>}
       </div>
 
       <div>
@@ -266,11 +273,7 @@ export default function EventForm() {
           onChange={handleChange}
           placeholder="例：渋谷区道玄坂1-2-3 ビル5F（参加確定者のみに公開）"
         />
-        {errors.place && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.place}
-          </p>
-        )}
+        {errors.place && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.place}</p>}
       </div>
 
       <div>
@@ -284,11 +287,7 @@ export default function EventForm() {
           onChange={handleChange}
           placeholder="例：20"
         />
-        {errors.capacity && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.capacity}
-          </p>
-        )}
+        {errors.capacity && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.capacity}</p>}
       </div>
 
       <div>
@@ -302,6 +301,36 @@ export default function EventForm() {
           placeholder="例：📍 渋谷区道玄坂1-2-3 ビル5F ／ 💰 4,000円（当日精算）"
           style={{ resize: 'vertical' }}
         />
+      </div>
+
+      {/* リマインド設定 */}
+      <div className="p-3 rounded-xl" style={{ background: '#f9f9f9', border: '1px solid #e0e0e0' }}>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={reminderEnabled}
+            onChange={(e) => setReminderEnabled(e.target.checked)}
+            style={{ accentColor: '#06C755', width: 18, height: 18 }}
+          />
+          <span className="text-sm font-bold" style={{ color: '#1a1a1a' }}>
+            前日のリマインドメールを送る
+          </span>
+        </label>
+        {reminderEnabled && (
+          <div className="mt-3 flex items-center gap-3">
+            <label className="text-sm" style={{ color: '#555' }}>送信時刻</label>
+            <input
+              type="time"
+              className="input-field"
+              value={reminderTime}
+              onChange={(e) => setReminderTime(e.target.value)}
+              style={{ width: 'auto' }}
+            />
+            <span className="text-xs" style={{ color: '#888' }}>
+              イベント前日のこの時刻に全参加者へ送信
+            </span>
+          </div>
+        )}
       </div>
 
       <button type="submit" className="btn-primary" disabled={submitting}>

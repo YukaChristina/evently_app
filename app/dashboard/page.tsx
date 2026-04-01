@@ -145,6 +145,7 @@ function AnnouncementForm({
 export default function DashboardPage() {
   const [data, setData] = useState<EventWithParticipants[]>([])
   const [copied, setCopied] = useState<string | null>(null)
+  const [copiedLine, setCopiedLine] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [expandedParticipants, setExpandedParticipants] = useState<Set<string>>(new Set())
   const [showAnnouncement, setShowAnnouncement] = useState<string | null>(null)
@@ -189,6 +190,21 @@ export default function DashboardPage() {
       await navigator.clipboard.writeText(url)
       setCopied(eventId)
       setTimeout(() => setCopied(null), 2000)
+    } catch {}
+  }
+
+  function getLineText(event: Event, url: string) {
+    const dateStr = formatDateJa(event.date_start, event.date_end)
+    return `【${event.title}】\n📅 ${dateStr}\n📍 ${event.place_public}\n\n参加はこちらから👇\n${url}`
+  }
+
+  async function copyLineText(event: Event) {
+    const url = getEventUrl(event.id)
+    const text = getLineText(event, url)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedLine(event.id)
+      setTimeout(() => setCopiedLine(null), 2000)
     } catch {}
   }
 
@@ -290,24 +306,40 @@ export default function DashboardPage() {
 
                 {/* URL section */}
                 <div className="mt-3 p-3 rounded-xl" style={{ background: '#f0f4f8' }}>
-                  <p className="text-xs font-bold mb-1" style={{ color: '#06C755' }}>
-                    📢 LINEグループにこのURLを貼ってください
+                  <p className="text-xs font-bold mb-2" style={{ color: '#06C755' }}>
+                    📢 LINEグループに貼る文面
                   </p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs flex-1 truncate" style={{ color: '#555' }}>
-                      {url}
-                    </p>
+                  {/* LINE文面プレビュー */}
+                  <div
+                    className="text-xs p-2 rounded-xl mb-2 whitespace-pre-wrap"
+                    style={{ background: '#fff', color: '#333', lineHeight: 1.7 }}
+                  >
+                    {getLineText(event, url)}
+                  </div>
+                  <div className="flex gap-2">
                     <button
-                      onClick={() => copyUrl(event.id)}
-                      className="flex-shrink-0 text-xs font-bold px-3 py-1 rounded-full"
+                      onClick={() => copyLineText(event)}
+                      className="flex-1 text-xs font-bold py-1.5 rounded-full"
                       style={{
-                        background: copied === event.id ? '#00A040' : '#06C755',
+                        background: copiedLine === event.id ? '#00A040' : '#06C755',
                         color: '#fff',
                         border: 'none',
                         cursor: 'pointer',
                       }}
                     >
-                      {copied === event.id ? 'コピー済' : 'コピー'}
+                      {copiedLine === event.id ? '✓ コピー済' : '📋 文面をコピー'}
+                    </button>
+                    <button
+                      onClick={() => copyUrl(event.id)}
+                      className="flex-1 text-xs font-bold py-1.5 rounded-full"
+                      style={{
+                        background: '#fff',
+                        color: '#06C755',
+                        border: '1.5px solid #06C755',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {copied === event.id ? '✓ URL コピー済' : 'URLだけコピー'}
                     </button>
                   </div>
                 </div>
