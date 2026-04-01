@@ -5,7 +5,7 @@
 :root {
   --color-primary: #06C755;
   --color-primary-dark: #00A040;
-  --color-bg: #f5f5f5;
+  --color-bg: #e8e8e8;
   --color-card: #ffffff;
   --color-text: #1a1a1a;
   --color-muted: #888888;
@@ -36,7 +36,7 @@ body {
   background-color: var(--color-card);
   border-radius: 1rem;
   padding: 1rem;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
 }
 
 .btn-primary {
