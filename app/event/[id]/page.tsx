@@ -26,6 +26,7 @@ export default function EventPage() {
   const [communityName, setCommunityName] = useState('')
   const [participants, setParticipants] = useState<ParticipantWithMember[]>([])
   const [myRole, setMyRole] = useState<'organizer' | 'participant' | null>(null)
+  const [myMember, setMyMember] = useState<Member | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function EventPage() {
       if (community) {
         const member = await getCurrentMember(community.id)
         if (member) {
+          setMyMember(member)
           let role = await getMyRole(id, member.id)
 
           // sessionStorageに保存されたmember_idでも確認（JoinForm経由で登録した場合）
@@ -111,6 +113,39 @@ export default function EventPage() {
       >
         {communityName}
       </p>
+
+      {/* 現在のユーザー状態バッジ */}
+      {myMember && (
+        <div
+          className="flex items-center gap-2 px-3 py-2 rounded-xl mb-3 text-xs"
+          style={{ background: '#f0f4f8' }}
+        >
+          <div
+            className="flex-shrink-0 flex items-center justify-center rounded-full text-white font-bold"
+            style={{
+              width: 24,
+              height: 24,
+              background: myMember.avatar_color || '#06C755',
+              fontSize: 11,
+            }}
+          >
+            {myMember.name.charAt(0)}
+          </div>
+          <span style={{ color: '#555' }}>
+            <span className="font-bold" style={{ color: '#1a1a1a' }}>{myMember.name}</span>
+            {' '}としてログイン中
+          </span>
+          <span
+            className="ml-auto font-bold px-2 py-0.5 rounded-full"
+            style={{
+              background: myRole === 'organizer' ? '#fff3cd' : myRole === 'participant' ? '#e6f9ee' : '#f0f0f0',
+              color: myRole === 'organizer' ? '#b8860b' : myRole === 'participant' ? '#06C755' : '#888',
+            }}
+          >
+            {myRole === 'organizer' ? '幹事' : myRole === 'participant' ? '参加済み' : '未参加'}
+          </span>
+        </div>
+      )}
 
       {/* Event title */}
       <h1 className="text-2xl font-black mt-2 mb-1" style={{ color: '#1a1a1a' }}>
