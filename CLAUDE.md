@@ -1,72 +1,96 @@
 # Evently - CLAUDE.md
 
 ## プロジェクト概要
-コミュニティのイベント幹事の作業負担をほぼゼロにするイベント管理WebアプリのプロトタイプTypeScript。
+コミュニティのイベント幹事の作業負担をほぼゼロにするイベント管理WebアプリのTypeScript実装。
 想定ユーザー：ビジネススクール同窓会・社会人コミュニティ・業界勉強会などのセミフォーマルなコミュニティ。
 
 ## 技術スタック
 - フロントエンド：Next.js 14 (App Router) + TailwindCSS + TypeScript
-- データ保存：localStorageのみ（バックエンド・DB不要）
+- データ保存：Supabase（PostgreSQL + Realtime）
+- 認証：Supabase Auth（メールOTP／パスワードレス）
+- メール送信：Resend API（未設定時はコンソールログのみ）
 - デプロイ：Vercel（GitHub連携、ブランチ：master）
 
 ## ディレクトリ構成
 ```
 evently_app/
 ├── app/
-│   ├── page.tsx              # 幹事：イベント作成画面
-│   ├── dashboard/page.tsx    # 幹事：イベント管理画面
-│   ├── event/[id]/page.tsx   # 参加者：イベントページ
-│   ├── join/[id]/page.tsx    # 参加者：参加申込画面
-│   ├── join-done/page.tsx    # 参加者：参加確定画面
-│   ├── chat/[id]/page.tsx    # 参加者：チャット画面
-│   └── layout.tsx            # 共通レイアウト（Headerを含む）
+│   ├── page.tsx               # ホーム画面（認証保護済み・ナビゲーション）
+│   ├── login/page.tsx         # ログイン画面（メールOTP 2ステップ）
+│   ├── dashboard/page.tsx     # マイイベント一覧（幹事カード＋参加者カード）
+│   ├── create/page.tsx        # イベント作成画面
+│   ├── event/[id]/page.tsx    # イベント詳細ページ（公開、ロール別表示）
+│   ├── join/[id]/page.tsx     # 参加申込画面（認証保護済み）
+│   ├── join-done/page.tsx     # 参加確定画面
+│   ├── chat/[id]/page.tsx     # 参加者チャット画面（認証保護済み）
+│   ├── api/send-email/route.ts # メール送信API（Resend）
+│   └── layout.tsx             # 共通レイアウト（Header + TestLoginBar）
 ├── components/
-│   ├── Header.tsx            # 全ページ共通ヘッダー（幹事/参加者モード切替）
-│   ├── EventForm.tsx         # イベント作成フォーム
-│   ├── JoinForm.tsx          # 参加申込フォーム（プロフィール保存機能あり）
-│   ├── ChatBox.tsx           # チャットUI
-│   ├── ParticipantList.tsx   # 参加者一覧
-│   ├── StatusBar.tsx         # 残席数バー
-│   └── MailPreview.tsx       # メール通知モックUI
+│   ├── Header.tsx             # 共通ヘッダー（ロゴ・マイイベントリンク・ログアウトボタン）
+│   ├── TestLoginBar.tsx       # 開発環境専用テストアカウント切替バー
+│   ├── EventForm.tsx          # イベント作成フォーム（日時自動補完・リマインダー設定）
+│   ├── JoinForm.tsx           # 参加申込フォーム（auth情報から自動入力）
+│   ├── ChatBox.tsx            # チャットUI（Realtime購読・既読件数表示）
+│   ├── ParticipantList.tsx    # 参加者一覧
+│   └── StatusBar.tsx          # 残席数バー
 └── lib/
-    └── storage.ts            # localStorage操作ユーティリティ
+    ├── supabase.ts            # Supabaseクライアント・DB型定義・ヘルパー関数群
+    ├── useRequireAuth.ts      # 認証保護hook（未ログイン→/loginへリダイレクト）
+    └── testAccounts.ts        # 開発用テストアカウント定義（幹事2名・参加者10名）
 ```
 
-## localStorageキー設計
+## 認証フロー
+- 本番：メールOTP（`supabase.auth.signInWithOtp` → `verifyOtp`）
+- 開発：`NEXT_PUBLIC_ENV=development` のときはテストアカウントを使用、認証バイパス
+- 保護対象ページ：`/`・`/dashboard`・`/create`・`/join/[id]`・`/chat/[id]`
+- 公開ページ：`/event/[id]`・`/login`
+
+## 環境変数
 ```
-evently_event_${eventId}          # イベント1件
-evently_participants_${eventId}   # 参加者リスト（JSON配列）
-evently_chat_${eventId}           # チャットメッセージ（JSON配列）
-evently_events_index              # 全イベントIDリスト（JSON配列）
-evently_saved_profile             # 参加者プロフィール保存（任意）
+NEXT_PUBLIC_SUPABASE_URL        # Supabase プロジェクトURL
+NEXT_PUBLIC_SUPABASE_ANON_KEY   # Supabase anon key
+NEXT_PUBLIC_ENV                 # "development" のみテストアカウント有効
+RESEND_API_KEY                  # メール送信（未設定時はモック動作）
 ```
+
+## Supabaseテーブル構成
+```
+communities       # コミュニティ（id, name, slug, admin_email, is_private）
+members           # メンバー（id, community_id, auth_user_id, name, email, ...）
+events            # イベント（id, community_id, title, date_start, date_end, place_public, place_private, capacity, status）
+event_members     # イベント参加（event_id, member_id, role: organizer|participant）
+chat_messages     # チャット（event_id, member_id, body, sent_at）
+chat_reads        # 既読管理（message_id, member_id）
+announcements     # お知らせ（event_id, member_id, title, body, is_pinned）
+reminders         # リマインダー設定（event_id, remind_at）
+```
+
+## ダッシュボード（/dashboard）の表示ロジック
+- 幹事のイベント：フルカード（参加者一覧・LINE文面コピー・お知らせ送信・削除）
+- 参加者のイベント：シンプルカード（基本情報・イベント詳細リンク・チャットボタン）
+- `getOrganizerEvents(memberId)` / `getParticipantEvents(memberId)` で分けて取得
 
 ## デザイン仕様
 - メインカラー：#06C755（LINEグリーン）
 - サブカラー：#00A040
-- 背景：#f5f5f5 / カード：#ffffff
+- 背景：#e8e8e8 / カード：#ffffff
 - 角丸：rounded-2xl（カード）/ rounded-full（バッジ・ボタン）
 - モバイルファースト、max-width: 480px、PC中央寄せ
 - フォント：-apple-system, 'Hiragino Sans'
 
-## 画面モード切替
-- 幹事モード：`/`・`/dashboard`（Header右上に「参加者画面へ」ボタン）
-- 参加者モード：`/event/[id]`など（Header右上に「幹事画面へ」ボタン）
-
 ## デモデータ
-`lib/storage.ts` の `initDemoData()` で初回起動時に自動生成。
-- イベント：「CBS 若手卒業生交流会2026」（id: `mba2026spring`）
-- 参加者：10名（年度表記は `Class of XXXX` 形式に統一）
+`lib/supabase.ts` の `initDemoData()` で初回起動時に自動生成。
+- コミュニティ：「MBA同窓会」（slug: `mba-alumni`）
+- イベント：「MBA同窓生 春の交流会2026」
+- メンバー：12名（幹事2名・参加者10名）、`testAccounts.ts` 定義
 - チャット：3件
 
-## 注意事項
-- localStorageはブラウザをまたいでデータ共有不可（デモ・プロトタイプ用途）
-- メール通知・チャット通知はモックUI表示のみ（実際には送信しない）
-- デモデータは `evently_events_index` が存在しない場合のみ生成される
-- デプロイはVercel、ブランチ `master`、自動デプロイが効かない場合は「Create Deployment」から手動実行
+## 開発環境の注意事項
+- テストアカウント切替はTestLoginBarで行う（`NEXT_PUBLIC_ENV=development` 時のみ表示）
+- 本番環境ではTestLoginBarは非表示・テストアカウントは一切使わない
+- デプロイはVercel、ブランチ `master`
 
-## 実装していない機能（スコープ外）
-- メール実際の送信（SendGrid等）
-- リアルタイムチャット（WebSocket/DB必要）
-- 認証・ログイン
-- 複数端末間のデータ同期
+## 未実装機能（今後のスコープ）
+- Web Push通知
+- リマインダーの実際の送信処理（cron等）
+- 複数コミュニティ対応
