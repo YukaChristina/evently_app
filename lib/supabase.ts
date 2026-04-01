@@ -128,6 +128,8 @@ export async function getDefaultCommunity(): Promise<Community | null> {
 // ---- Member Helpers ----
 
 export async function getCurrentMember(communityId: string): Promise<Member | null> {
+  // 本番環境ではテストアカウントを使わない
+  if (process.env.NEXT_PUBLIC_ENV !== 'development') return null
   const account = getTestAccount()
   if (!account) return null
   const { data } = await supabase

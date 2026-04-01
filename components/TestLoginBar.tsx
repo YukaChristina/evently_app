@@ -10,6 +10,7 @@ export default function TestLoginBar() {
   const isDev = process.env.NEXT_PUBLIC_ENV === 'development'
 
   useEffect(() => {
+    if (!isDev) return  // 本番ではsessionStorageに書き込まない
     const account = getTestAccount()
     if (!account && TEST_ACCOUNTS.length > 0) {
       setTestAccount(TEST_ACCOUNTS[0])
@@ -17,7 +18,7 @@ export default function TestLoginBar() {
     } else {
       setCurrentAccount(account)
     }
-  }, [])
+  }, [isDev])
 
   if (!isDev) return null
 
