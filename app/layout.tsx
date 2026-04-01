@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import Header from '@/components/Header'
+import TestLoginBar from '@/components/TestLoginBar'
 
 export const metadata: Metadata = {
   title: 'Evently',
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="ja">
       <body>
         <div className="app-container">
+          <TestLoginBar />
           <Header />
           {children}
         </div>

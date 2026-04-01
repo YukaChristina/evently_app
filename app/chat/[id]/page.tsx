@@ -1,54 +1,109 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getEvent, getChatMessages, getParticipants, ChatMessage, Event } from '@/lib/storage'
+import {
+  supabase,
+  getDefaultCommunity,
+  getCurrentMember,
+  getMyRole,
+  getAllEventMembers,
+  Event,
+  Member,
+} from '@/lib/supabase'
 import ChatBox from '@/components/ChatBox'
-import MailPreview from '@/components/MailPreview'
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [event, setEvent] = useState<Event | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [myName, setMyName] = useState('ゲスト')
-  const [showMailNotif, setShowMailNotif] = useState(false)
-  const [participantCount, setParticipantCount] = useState(0)
+  const [myMember, setMyMember] = useState<Member | null>(null)
+  const [myRole, setMyRole] = useState<'organizer' | 'participant' | null>(null)
+  const [loading, setLoading] = useState(true)
+  const allMembersRef = useRef<Member[]>([])
 
   useEffect(() => {
-    const ev = getEvent(id)
-    if (!ev) { router.push('/'); return }
-    setEvent(ev)
+    async function load() {
+      const { data: eventData } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', id)
+        .single()
 
-    const name = sessionStorage.getItem('evently_my_name') || 'ゲスト'
-    setMyName(name)
+      if (!eventData) {
+        router.push('/')
+        return
+      }
 
-    setMessages(getChatMessages(id))
-    setParticipantCount(getParticipants(id).length)
+      setEvent(eventData as Event)
+
+      const community = await getDefaultCommunity()
+      if (community) {
+        const member = await getCurrentMember(community.id)
+        if (member) {
+          setMyMember(member)
+          const role = await getMyRole(id, member.id)
+          setMyRole(role)
+        }
+      }
+
+      // チャット通知用に全メンバーを取得
+      allMembersRef.current = await getAllEventMembers(id)
+
+      setLoading(false)
+    }
+    load()
   }, [id, router])
 
-  // Poll for new messages every 2 seconds
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setMessages(getChatMessages(id))
-      setParticipantCount(getParticipants(id).length)
-    }, 2000)
-    return () => clearInterval(timer)
-  }, [id])
+  async function handleSend(body: string, senderName: string) {
+    if (!event) return
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    // 投稿者以外のメールアドレスに通知
+    const toEmails = allMembersRef.current
+      .filter((m) => m.id !== myMember?.id && m.email)
+      .map((m) => m.email as string)
 
-  function handleMessageSent() {
-    setMessages(getChatMessages(id))
-    setShowMailNotif(true)
-    setTimeout(() => setShowMailNotif(false), 5000)
+    if (toEmails.length > 0) {
+      await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'chat-notification',
+          to: toEmails,
+          senderName,
+          eventTitle: event.title,
+          bodyPreview: body.length > 50 ? body.slice(0, 50) + '...' : body,
+          chatUrl: `${origin}/chat/${id}`,
+        }),
+      })
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p style={{ color: '#888' }}>読み込み中...</p>
+      </div>
+    )
   }
 
   if (!event) return null
 
-  const eventUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/event/${id}`
-    : `/event/${id}`
-
-  const mailBody = `明日はいよいよ本番です！\n📅 ${event.date}\n📍 ${event.place}\n参加者は現在${participantCount}名です\n\n${eventUrl}`
+  if (myRole === null) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-4">
+        <p className="text-4xl mb-4">🔒</p>
+        <p className="font-bold text-lg mb-2">参加者・幹事のみ閲覧できます</p>
+        <button
+          onClick={() => router.push(`/event/${id}`)}
+          className="text-sm font-bold px-6 py-2 rounded-full mt-2"
+          style={{ background: '#06C755', color: '#fff', border: 'none', cursor: 'pointer' }}
+        >
+          イベントページへ
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#f5f5f5' }}>
@@ -65,33 +120,33 @@ export default function ChatPage() {
             ←
           </button>
           <div>
-            <p className="font-bold text-sm" style={{ color: '#fff' }}>参加者チャット</p>
-            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.85)' }}>{event.title}</p>
+            <p className="font-bold text-sm" style={{ color: '#fff' }}>
+              参加者チャット
+            </p>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.85)' }}>
+              {event.title}
+            </p>
           </div>
+          {myRole === 'organizer' && (
+            <span
+              className="ml-auto text-xs px-2 py-0.5 rounded-full font-bold"
+              style={{ background: 'rgba(255,255,255,0.2)', color: '#fff' }}
+            >
+              幹事
+            </span>
+          )}
         </div>
 
         <div className="px-4 pt-4">
-          <ChatBox
-            eventId={id}
-            messages={messages}
-            myName={myName}
-            onSend={handleMessageSent}
-          />
-        </div>
-
-        {/* Mock mail notification */}
-        {showMailNotif && (
-          <div className="px-4 mt-6">
-            <p className="text-xs font-semibold mb-2" style={{ color: '#888' }}>
-              📨 メール通知イメージ（実際には送信されません）
-            </p>
-            <MailPreview
-              subject={`明日開催 - ${event.title}`}
-              body={mailBody}
-              eventUrl={eventUrl}
+          {myMember && (
+            <ChatBox
+              eventId={id}
+              myMemberId={myMember.id}
+              myName={myMember.name}
+              onSend={handleSend}
             />
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

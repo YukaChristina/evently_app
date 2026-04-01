@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { initDemoData, getEvent, getParticipants, Event } from '@/lib/storage'
+import { supabase, initDemoData, getEventParticipants, formatDateJa, Event } from '@/lib/supabase'
 import JoinForm from '@/components/JoinForm'
 import Link from 'next/link'
 
@@ -13,12 +13,27 @@ export default function JoinPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    initDemoData()
-    const e = getEvent(id)
-    const p = getParticipants(id)
-    setEvent(e)
-    setParticipantCount(p.length)
-    setLoading(false)
+    async function load() {
+      await initDemoData()
+
+      const { data: eventData } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (!eventData) {
+        setLoading(false)
+        return
+      }
+
+      setEvent(eventData as Event)
+
+      const parts = await getEventParticipants(id)
+      setParticipantCount(parts.length)
+      setLoading(false)
+    }
+    load()
   }, [id])
 
   if (loading) {
@@ -45,7 +60,9 @@ export default function JoinPage() {
     )
   }
 
-  const isFull = participantCount >= event.capacity
+  const capacity = event.capacity || 0
+  const isFull = participantCount >= capacity
+  const dateStr = formatDateJa(event.date_start, event.date_end)
 
   return (
     <div className="min-h-screen px-4 py-6">
@@ -60,17 +77,14 @@ export default function JoinPage() {
 
       {/* Event info */}
       <div className="card mb-4">
-        <p className="text-xs font-bold mb-1" style={{ color: '#06C755' }}>
-          {event.community}
-        </p>
         <h1 className="font-black text-xl mb-1" style={{ color: '#1a1a1a' }}>
           {event.title}
         </h1>
         <p className="text-sm" style={{ color: '#555' }}>
-          📅 {event.date}
+          📅 {dateStr}
         </p>
         <p className="text-sm" style={{ color: '#555' }}>
-          📍 {event.placePublic}
+          📍 {event.place_public}
         </p>
         <div className="flex items-center gap-2 mt-2">
           <span
@@ -80,11 +94,11 @@ export default function JoinPage() {
               color: isFull ? '#fff' : '#06C755',
             }}
           >
-            {participantCount}/{event.capacity}名
+            {participantCount}/{capacity}名
           </span>
           {!isFull && (
             <span className="text-xs" style={{ color: '#888' }}>
-              残り{event.capacity - participantCount}席
+              残り{capacity - participantCount}席
             </span>
           )}
         </div>

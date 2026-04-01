@@ -1,7 +1,19 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { initDemoData, getAllEventIds, getEvent, getParticipants, deleteEvent, Event, Participant } from '@/lib/storage'
+import {
+  supabase,
+  initDemoData,
+  getDefaultCommunity,
+  getCurrentMember,
+  getOrganizerEvents,
+  getEventParticipants,
+  getAllEventMembers,
+  formatDateJa,
+  Event,
+  Member,
+  EventMember,
+} from '@/lib/supabase'
 import Link from 'next/link'
 
 const AVATAR_COLORS = [
@@ -9,7 +21,8 @@ const AVATAR_COLORS = [
   '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
 ]
 
-function getAvatarColor(name: string): string {
+function getAvatarColor(name: string, avatarColor?: string | null): string {
+  if (avatarColor) return avatarColor
   const sum = name.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
   return AVATAR_COLORS[sum % AVATAR_COLORS.length]
 }
@@ -27,9 +40,106 @@ function formatTime(iso: string) {
   }
 }
 
+type ParticipantWithMember = EventMember & { member: Member }
+
 type EventWithParticipants = {
   event: Event
-  participants: Participant[]
+  participants: ParticipantWithMember[]
+}
+
+// アナウンス投稿フォーム
+function AnnouncementForm({
+  eventId,
+  memberId,
+  participants,
+  eventTitle,
+}: {
+  eventId: string
+  memberId: string
+  participants: ParticipantWithMember[]
+  eventTitle: string
+}) {
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!body.trim()) return
+    setSending(true)
+
+    await supabase.from('announcements').insert({
+      event_id: eventId,
+      member_id: memberId,
+      title: title.trim() || null,
+      body: body.trim(),
+      is_pinned: false,
+    })
+
+    // 全参加者にメール通知
+    const toEmails = participants
+      .filter((p) => p.member.email)
+      .map((p) => p.member.email as string)
+
+    if (toEmails.length > 0) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'announcement',
+          to: toEmails,
+          eventTitle,
+          announcementTitle: title.trim() || null,
+          announcementBody: body.trim(),
+          eventUrl: `${origin}/event/${eventId}`,
+        }),
+      })
+    }
+
+    setTitle('')
+    setBody('')
+    setSending(false)
+    setSent(true)
+    setTimeout(() => setSent(false), 3000)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-3">
+      <p className="text-xs font-bold mb-2" style={{ color: '#888' }}>
+        📢 参加者全員へのお知らせ
+      </p>
+      <input
+        className="input-field mb-2"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="タイトル（任意）"
+      />
+      <textarea
+        className="input-field mb-2"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder="お知らせ内容を入力..."
+        rows={3}
+        style={{ resize: 'vertical' }}
+        required
+      />
+      <button
+        type="submit"
+        disabled={!body.trim() || sending}
+        className="w-full text-xs font-bold py-2 rounded-full"
+        style={{
+          background: body.trim() && !sending ? '#06C755' : '#ccc',
+          color: '#fff',
+          border: 'none',
+          cursor: body.trim() && !sending ? 'pointer' : 'not-allowed',
+        }}
+      >
+        {sent ? '✓ 送信しました' : sending ? '送信中...' : '全参加者にお知らせを送信'}
+      </button>
+    </form>
+  )
 }
 
 export default function DashboardPage() {
@@ -37,30 +147,35 @@ export default function DashboardPage() {
   const [copied, setCopied] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [expandedParticipants, setExpandedParticipants] = useState<Set<string>>(new Set())
+  const [showAnnouncement, setShowAnnouncement] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [currentMember, setCurrentMember] = useState<Member | null>(null)
 
-  function load() {
-    const ids = getAllEventIds()
+  async function load() {
+    await initDemoData()
+
+    const community = await getDefaultCommunity()
+    if (!community) { setLoading(false); return }
+
+    const member = await getCurrentMember(community.id)
+    if (!member) { setLoading(false); return }
+
+    setCurrentMember(member)
+
+    const events = await getOrganizerEvents(member.id)
     const result: EventWithParticipants[] = []
-    for (const id of ids) {
-      const event = getEvent(id)
-      if (!event) continue
-      const participants = getParticipants(id)
+
+    for (const event of events) {
+      const participants = await getEventParticipants(event.id)
       result.push({ event, participants })
     }
-    // Sort newest first
-    result.sort(
-      (a, b) =>
-        new Date(b.event.createdAt).getTime() -
-        new Date(a.event.createdAt).getTime()
-    )
+
     setData(result)
+    setLoading(false)
   }
 
   useEffect(() => {
-    initDemoData()
     load()
-    const timer = setInterval(load, 3000)
-    return () => clearInterval(timer)
   }, [])
 
   function getEventUrl(eventId: string) {
@@ -74,30 +189,38 @@ export default function DashboardPage() {
       await navigator.clipboard.writeText(url)
       setCopied(eventId)
       setTimeout(() => setCopied(null), 2000)
-    } catch {
-      // fallback
-    }
+    } catch {}
+  }
+
+  async function handleDelete(eventId: string) {
+    await supabase.from('event_members').delete().eq('event_id', eventId)
+    await supabase.from('chat_messages').delete().eq('event_id', eventId)
+    await supabase.from('announcements').delete().eq('event_id', eventId)
+    await supabase.from('events').delete().eq('id', eventId)
+    setConfirmDelete(null)
+    setData((prev) => prev.filter((d) => d.event.id !== eventId))
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p style={{ color: '#888' }}>読み込み中...</p>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen px-4 py-6">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black" style={{ color: '#1a1a1a' }}>
             イベント管理画面
           </h1>
-          <p className="text-xs mt-0.5" style={{ color: '#888' }}>
-            3秒ごとに自動更新
-          </p>
         </div>
         <Link
           href="/"
           className="text-sm font-bold px-4 py-2 rounded-full"
-          style={{
-            background: '#06C755',
-            color: '#fff',
-          }}
+          style={{ background: '#06C755', color: '#fff' }}
         >
           ＋ イベントを作成する
         </Link>
@@ -124,27 +247,29 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-4">
           {data.map(({ event, participants }) => {
             const url = getEventUrl(event.id)
-            const isFull = participants.length >= event.capacity
+            const capacity = event.capacity || 0
+            const isFull = participants.length >= capacity
             const isExpanded = expandedParticipants.has(event.id)
             const sorted = [...participants].sort(
-              (a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime()
+              (a, b) => new Date(b.joined_at).getTime() - new Date(a.joined_at).getTime()
             )
             const displayed = isExpanded ? sorted : sorted.slice(0, 5)
             const hasMore = participants.length > 5
+            const dateStr = formatDateJa(event.date_start, event.date_end)
 
             return (
               <div key={event.id} className="card">
                 {/* Event header */}
                 <div className="flex justify-between items-start mb-1">
                   <div className="flex-1 min-w-0 mr-2">
-                    <p className="text-xs" style={{ color: '#888' }}>
-                      {event.community}
-                    </p>
                     <h2 className="font-bold text-base leading-tight" style={{ color: '#1a1a1a' }}>
                       {event.title}
                     </h2>
                     <p className="text-xs mt-0.5" style={{ color: '#888' }}>
-                      {event.date}
+                      {dateStr}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: '#888' }}>
+                      📍 {event.place_public}
                     </p>
                   </div>
                   <span
@@ -154,23 +279,22 @@ export default function DashboardPage() {
                       color: isFull ? '#fff' : '#06C755',
                     }}
                   >
-                    {participants.length}/{event.capacity}名
+                    {participants.length}/{capacity}名
                   </span>
                 </div>
 
+                {/* Private location */}
+                <div className="mt-1 text-xs" style={{ color: '#555' }}>
+                  🔑 実際の場所：{event.place_private}
+                </div>
+
                 {/* URL section */}
-                <div
-                  className="mt-3 p-3 rounded-xl"
-                  style={{ background: '#f0f4f8' }}
-                >
+                <div className="mt-3 p-3 rounded-xl" style={{ background: '#f0f4f8' }}>
                   <p className="text-xs font-bold mb-1" style={{ color: '#06C755' }}>
                     📢 LINEグループにこのURLを貼ってください
                   </p>
                   <div className="flex items-center gap-2">
-                    <p
-                      className="text-xs flex-1 truncate"
-                      style={{ color: '#555' }}
-                    >
+                    <p className="text-xs flex-1 truncate" style={{ color: '#555' }}>
                       {url}
                     </p>
                     <button
@@ -179,6 +303,8 @@ export default function DashboardPage() {
                       style={{
                         background: copied === event.id ? '#00A040' : '#06C755',
                         color: '#fff',
+                        border: 'none',
+                        cursor: 'pointer',
                       }}
                     >
                       {copied === event.id ? 'コピー済' : 'コピー'}
@@ -186,21 +312,49 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
+                {/* Announcement */}
+                <div className="mt-3">
+                  <button
+                    onClick={() =>
+                      setShowAnnouncement(
+                        showAnnouncement === event.id ? null : event.id
+                      )
+                    }
+                    className="text-xs font-bold px-3 py-1.5 rounded-full w-full text-left"
+                    style={{
+                      background: showAnnouncement === event.id ? '#fff3cd' : '#f9f9f9',
+                      color: '#333',
+                      border: '1px solid #ddd',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {showAnnouncement === event.id ? '▲ お知らせを閉じる' : '📢 参加者へのお知らせを送る'}
+                  </button>
+                  {showAnnouncement === event.id && currentMember && (
+                    <AnnouncementForm
+                      eventId={event.id}
+                      memberId={currentMember.id}
+                      participants={participants}
+                      eventTitle={event.title}
+                    />
+                  )}
+                </div>
+
                 {/* Delete */}
                 {confirmDelete === event.id ? (
                   <div className="mt-3 flex items-center gap-2 p-2 rounded-xl" style={{ background: '#fff0f0' }}>
                     <p className="text-xs flex-1" style={{ color: '#ff4d4f' }}>本当に削除しますか？</p>
                     <button
-                      onClick={() => { deleteEvent(event.id); setConfirmDelete(null); load() }}
+                      onClick={() => handleDelete(event.id)}
                       className="text-xs font-bold px-3 py-1 rounded-full"
-                      style={{ background: '#ff4d4f', color: '#fff' }}
+                      style={{ background: '#ff4d4f', color: '#fff', border: 'none', cursor: 'pointer' }}
                     >
                       削除
                     </button>
                     <button
                       onClick={() => setConfirmDelete(null)}
                       className="text-xs font-bold px-3 py-1 rounded-full"
-                      style={{ background: '#eee', color: '#555' }}
+                      style={{ background: '#eee', color: '#555', border: 'none', cursor: 'pointer' }}
                     >
                       キャンセル
                     </button>
@@ -218,13 +372,16 @@ export default function DashboardPage() {
                 {/* Quick links */}
                 <div className="flex gap-2 mt-3">
                   <Link
+                    href={`/event/${event.id}`}
+                    className="flex-1 text-center text-xs font-bold py-2 rounded-full"
+                    style={{ background: '#fff', color: '#06C755', border: '1.5px solid #06C755' }}
+                  >
+                    イベントページ
+                  </Link>
+                  <Link
                     href={`/chat/${event.id}`}
                     className="flex-1 text-center text-xs font-bold py-2 rounded-full"
-                    style={{
-                      background: '#fff',
-                      color: '#45B7D1',
-                      border: '1.5px solid #45B7D1',
-                    }}
+                    style={{ background: '#fff', color: '#45B7D1', border: '1.5px solid #45B7D1' }}
                   >
                     💬 チャット
                   </Link>
@@ -241,32 +398,41 @@ export default function DashboardPage() {
                         <div key={p.id} className="flex items-center gap-2">
                           <div
                             className="flex-shrink-0 flex items-center justify-center rounded-full text-white text-xs font-bold"
-                            style={{ width: 28, height: 28, background: getAvatarColor(p.name) }}
+                            style={{
+                              width: 28,
+                              height: 28,
+                              background: getAvatarColor(p.member.name, p.member.avatar_color),
+                            }}
                           >
-                            {p.name.charAt(0)}
+                            {p.member.name.charAt(0)}
                           </div>
                           <div className="flex-1 min-w-0">
                             <span className="text-sm font-semibold truncate" style={{ color: '#1a1a1a' }}>
-                              {p.name}
+                              {p.member.name}
                             </span>
-                            <span className="text-xs ml-2" style={{ color: '#888' }}>
-                              {p.year}
-                            </span>
+                            {p.member.graduation_year && (
+                              <span className="text-xs ml-2" style={{ color: '#888' }}>
+                                Class of {p.member.graduation_year}
+                                {p.member.major ? ` / ${p.member.major}` : ''}
+                              </span>
+                            )}
                           </div>
                           <span className="text-xs flex-shrink-0" style={{ color: '#bbb' }}>
-                            {formatTime(p.joinedAt)}
+                            {formatTime(p.joined_at)}
                           </span>
                         </div>
                       ))}
                     </div>
                     {hasMore && (
                       <button
-                        onClick={() => setExpandedParticipants((prev) => {
-                          const next = new Set(prev)
-                          if (isExpanded) next.delete(event.id)
-                          else next.add(event.id)
-                          return next
-                        })}
+                        onClick={() =>
+                          setExpandedParticipants((prev) => {
+                            const next = new Set(prev)
+                            if (isExpanded) next.delete(event.id)
+                            else next.add(event.id)
+                            return next
+                          })
+                        }
                         className="text-xs mt-2 font-bold"
                         style={{ color: '#06C755', background: 'none', border: 'none', cursor: 'pointer' }}
                       >

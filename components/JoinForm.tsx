@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Participant, saveParticipant } from '@/lib/storage'
+import { supabase, getDefaultCommunity, getOrCreateMember, getTestAccount, formatDateJa } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
 const PROFILE_KEY = 'evently_saved_profile'
@@ -11,33 +11,51 @@ type JoinFormProps = {
   isFull: boolean
 }
 
+function getInitialForm() {
+  if (typeof window === 'undefined') {
+    return { name: '', graduationYear: '', major: '', company: '', jobTitle: '', email: '' }
+  }
+  // テストアカウントから初期値を取得（sessionStorageは同期アクセス可能）
+  try {
+    const stored = sessionStorage.getItem('evently_test_account')
+    if (stored) {
+      const account = JSON.parse(stored)
+      return {
+        name: account.name ?? '',
+        graduationYear: String(account.graduation_year ?? ''),
+        major: account.major ?? '',
+        company: account.company ?? '',
+        jobTitle: account.job_title ?? '',
+        email: account.email ?? '',
+      }
+    }
+  } catch {}
+  // 保存済みプロフィールから取得
+  try {
+    const saved = localStorage.getItem(PROFILE_KEY)
+    if (saved) return { ...{ name: '', graduationYear: '', major: '', company: '', jobTitle: '', email: '' }, ...JSON.parse(saved) }
+  } catch {}
+  return { name: '', graduationYear: '', major: '', company: '', jobTitle: '', email: '' }
+}
+
 export default function JoinForm({ eventId, isFull }: JoinFormProps) {
   const router = useRouter()
-  const [form, setForm] = useState({
-    name: '',
-    year: '',
-    job: '',
-    email: '',
-  })
+  const [form, setForm] = useState(getInitialForm)
   const [saveProfile, setSaveProfile] = useState(false)
-  const [errors, setErrors] = useState<Partial<typeof form>>({})
+  const [errors, setErrors] = useState<Partial<Record<keyof typeof form, string>>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
 
+  // TestLoginBarが切り替わったときに再同期
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(PROFILE_KEY)
-      if (saved) {
-        const profile = JSON.parse(saved)
-        setForm((prev) => ({ ...prev, ...profile }))
-        setSaveProfile(true)
-      }
-    } catch {}
+    setForm(getInitialForm())
   }, [])
 
   function validate() {
-    const e: Partial<typeof form> = {}
+    const e: Partial<Record<keyof typeof form, string>> = {}
     if (!form.name.trim()) e.name = '名前は必須です'
-    if (!form.year.trim()) e.year = '卒業年度・専攻は必須です'
+    if (!form.graduationYear.trim()) e.graduationYear = '卒業年度は必須です'
+    if (!form.major.trim()) e.major = '専攻は必須です'
     if (!form.email.trim()) {
       e.email = 'メールアドレスは必須です'
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
@@ -47,11 +65,11 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
-    setErrors((prev) => ({ ...prev, [e.target.name]: undefined }))
+    setForm((prev: typeof form) => ({ ...prev, [e.target.name]: e.target.value }))
+    setErrors((prev: Partial<Record<keyof typeof form, string>>) => ({ ...prev, [e.target.name]: undefined }))
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (isFull) return
     const errs = validate()
@@ -59,29 +77,101 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
       setErrors(errs)
       return
     }
+
     setSubmitting(true)
-    const participant: Participant = {
-      id: Math.random().toString(36).slice(2, 10),
-      eventId,
-      name: form.name.trim(),
-      year: form.year.trim(),
-      job: form.job.trim(),
-      email: form.email.trim(),
-      joinedAt: new Date().toISOString(),
-    }
-    saveParticipant(participant)
-    sessionStorage.setItem('evently_my_name', form.name.trim())
-    if (saveProfile) {
-      localStorage.setItem(PROFILE_KEY, JSON.stringify({
+    setErrorMsg('')
+
+    try {
+      const community = await getDefaultCommunity()
+      if (!community) {
+        setErrorMsg('コミュニティ情報の取得に失敗しました')
+        setSubmitting(false)
+        return
+      }
+
+      const graduationYear = parseInt(form.graduationYear, 10) || null
+
+      const member = await getOrCreateMember(community.id, {
         name: form.name.trim(),
-        year: form.year.trim(),
-        job: form.job.trim(),
-        email: form.email.trim(),
-      }))
-    } else {
-      localStorage.removeItem(PROFILE_KEY)
+        email: form.email.trim().toLowerCase(),
+        graduation_year: graduationYear,
+        major: form.major.trim() || null,
+        company: form.company.trim() || null,
+        job_title: form.jobTitle.trim() || null,
+      })
+
+      if (!member) {
+        setErrorMsg('メンバー登録に失敗しました')
+        setSubmitting(false)
+        return
+      }
+
+      // upsert: 既に参加済みでも冪等に処理
+      const { error: joinError } = await supabase
+        .from('event_members')
+        .upsert(
+          { event_id: eventId, member_id: member.id, role: 'participant' },
+          { onConflict: 'event_id,member_id,role', ignoreDuplicates: true }
+        )
+
+      if (joinError) {
+        console.error('event_members upsert error:', joinError)
+        setErrorMsg('参加登録に失敗しました: ' + joinError.message)
+        setSubmitting(false)
+        return
+      }
+
+      // 参加確定メール送信
+      const { data: eventData } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', eventId)
+        .single()
+
+      if (eventData && member.email) {
+        const origin = typeof window !== 'undefined' ? window.location.origin : ''
+        await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'join-confirmation',
+            to: member.email,
+            memberName: member.name,
+            eventTitle: eventData.title,
+            dateStr: formatDateJa(eventData.date_start, eventData.date_end),
+            placePrivate: eventData.place_private ?? '',
+            detail: eventData.detail ?? null,
+            eventUrl: `${origin}/event/${eventId}`,
+            chatUrl: `${origin}/chat/${eventId}`,
+          }),
+        })
+      }
+
+      // Save member info to sessionStorage for chat
+      sessionStorage.setItem('evently_my_member_id', member.id)
+      sessionStorage.setItem('evently_my_name', form.name.trim())
+
+      if (saveProfile) {
+        localStorage.setItem(
+          PROFILE_KEY,
+          JSON.stringify({
+            name: form.name.trim(),
+            graduationYear: form.graduationYear,
+            major: form.major.trim(),
+            company: form.company.trim(),
+            jobTitle: form.jobTitle.trim(),
+            email: form.email.trim(),
+          })
+        )
+      } else {
+        localStorage.removeItem(PROFILE_KEY)
+      }
+
+      router.push(`/join-done?eventId=${eventId}`)
+    } catch {
+      setErrorMsg('エラーが発生しました。もう一度お試しください。')
+      setSubmitting(false)
     }
-    router.push(`/join-done?eventId=${eventId}`)
   }
 
   if (isFull) {
@@ -98,6 +188,15 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {errorMsg && (
+        <div
+          className="p-3 rounded-xl text-sm"
+          style={{ background: '#fff0f0', color: '#ff4d4f' }}
+        >
+          {errorMsg}
+        </div>
+      )}
+
       <div>
         <label className="label">名前 *</label>
         <input
@@ -105,7 +204,7 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
           className="input-field"
           value={form.name}
           onChange={handleChange}
-          placeholder="例：田中 勇希"
+          placeholder="例：田中 美咲"
         />
         {errors.name && (
           <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
@@ -115,29 +214,59 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
       </div>
 
       <div>
-        <label className="label">卒業年度・専攻 *</label>
+        <label className="label">卒業年度 *</label>
         <input
-          name="year"
+          name="graduationYear"
+          type="number"
           className="input-field"
-          value={form.year}
+          value={form.graduationYear}
           onChange={handleChange}
-          placeholder="例：2022年卒 / 経営戦略"
+          placeholder="例：2020"
+          min={1990}
+          max={2030}
         />
-        {errors.year && (
+        {errors.graduationYear && (
           <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.year}
+            {errors.graduationYear}
           </p>
         )}
       </div>
 
       <div>
-        <label className="label">現職（任意）</label>
+        <label className="label">専攻 *</label>
         <input
-          name="job"
+          name="major"
           className="input-field"
-          value={form.job}
+          value={form.major}
           onChange={handleChange}
-          placeholder="例：スタートアップ CMO"
+          placeholder="例：マーケティング"
+        />
+        {errors.major && (
+          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
+            {errors.major}
+          </p>
+        )}
+      </div>
+
+      <div>
+        <label className="label">会社名（任意）</label>
+        <input
+          name="company"
+          className="input-field"
+          value={form.company}
+          onChange={handleChange}
+          placeholder="例：スタートアップ A"
+        />
+      </div>
+
+      <div>
+        <label className="label">役職（任意）</label>
+        <input
+          name="jobTitle"
+          className="input-field"
+          value={form.jobTitle}
+          onChange={handleChange}
+          placeholder="例：CMO"
         />
       </div>
 

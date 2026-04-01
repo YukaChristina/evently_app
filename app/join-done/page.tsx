@@ -2,28 +2,42 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { initDemoData, getEvent, getParticipants, Event } from '@/lib/storage'
+import { supabase, getDefaultCommunity, getCurrentMember, formatDateJa, Event, Member } from '@/lib/supabase'
 import MailPreview from '@/components/MailPreview'
+import FeedbackForm from '@/components/FeedbackForm'
 import Link from 'next/link'
 
 function JoinDoneContent() {
   const searchParams = useSearchParams()
   const eventId = searchParams.get('eventId') ?? ''
   const [event, setEvent] = useState<Event | null>(null)
-  const [participantCount, setParticipantCount] = useState(0)
+  const [currentMember, setCurrentMember] = useState<Member | null>(null)
   const [eventUrl, setEventUrl] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    initDemoData()
-    const e = getEvent(eventId)
-    const p = getParticipants(eventId)
-    setEvent(e)
-    setParticipantCount(p.length)
-    if (typeof window !== 'undefined') {
-      setEventUrl(`${window.location.origin}/event/${eventId}`)
+    async function load() {
+      const { data: eventData } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', eventId)
+        .single()
+
+      setEvent(eventData as Event | null)
+
+      if (typeof window !== 'undefined') {
+        setEventUrl(`${window.location.origin}/event/${eventId}`)
+      }
+
+      const community = await getDefaultCommunity()
+      if (community) {
+        const member = await getCurrentMember(community.id)
+        setCurrentMember(member)
+      }
+
+      setLoading(false)
     }
-    setLoading(false)
+    load()
   }, [eventId])
 
   if (loading) {
@@ -50,8 +64,9 @@ function JoinDoneContent() {
     )
   }
 
+  const dateStr = formatDateJa(event.date_start, event.date_end)
   const mailSubject = `参加確定 - ${event.title}`
-  const mailBody = `${event.title} への参加が確定しました！\n\n📅 ${event.date}\n📍 ${event.place}\n\n${event.detail}\n\nイベントページはこちら：`
+  const mailBody = `${event.title} への参加が確定しました！\n\n📅 ${dateStr}\n📍 ${event.place_private}\n\n${event.detail || ''}\n\nイベントページはこちら：`
 
   return (
     <div className="min-h-screen px-4 py-6">
@@ -77,11 +92,11 @@ function JoinDoneContent() {
         <div className="flex flex-col gap-2">
           <div className="flex items-start gap-2 text-sm">
             <span>📅</span>
-            <span style={{ color: '#333' }}>{event.date}</span>
+            <span style={{ color: '#333' }}>{dateStr}</span>
           </div>
           <div className="flex items-start gap-2 text-sm">
             <span>📍</span>
-            <span style={{ color: '#333' }}>{event.place}</span>
+            <span style={{ color: '#333' }}>{event.place_private}</span>
           </div>
           {event.detail && (
             <div
@@ -99,11 +114,15 @@ function JoinDoneContent() {
         <p className="text-xs font-bold mb-2" style={{ color: '#888' }}>
           参加確定メール（イメージ）
         </p>
-        <MailPreview
-          subject={mailSubject}
-          body={mailBody}
-          eventUrl={eventUrl}
-        />
+        <MailPreview subject={mailSubject} body={mailBody} eventUrl={eventUrl} />
+      </div>
+
+      {/* Feedback form */}
+      <div className="mb-5">
+        <p className="text-xs font-bold mb-2" style={{ color: '#888' }}>
+          アプリへのフィードバック
+        </p>
+        <FeedbackForm eventId={eventId} memberId={currentMember?.id} />
       </div>
 
       {/* Action buttons */}
@@ -133,11 +152,13 @@ function JoinDoneContent() {
 
 export default function JoinDonePage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <p style={{ color: '#888' }}>読み込み中...</p>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <p style={{ color: '#888' }}>読み込み中...</p>
+        </div>
+      }
+    >
       <JoinDoneContent />
     </Suspense>
   )

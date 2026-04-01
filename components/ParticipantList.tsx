@@ -1,6 +1,6 @@
 'use client'
 
-import { Participant } from '@/lib/storage'
+import { Member } from '@/lib/supabase'
 
 const AVATAR_COLORS = [
   '#FF6B6B',
@@ -13,17 +13,18 @@ const AVATAR_COLORS = [
   '#F7DC6F',
 ]
 
-function getAvatarColor(name: string): string {
+export function getAvatarColor(name: string, avatarColor?: string | null): string {
+  if (avatarColor) return avatarColor
   const sum = name.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
   return AVATAR_COLORS[sum % AVATAR_COLORS.length]
 }
 
-function getAvatarChar(name: string): string {
+export function getAvatarChar(name: string): string {
   return name.trim().charAt(0)
 }
 
 type ParticipantListProps = {
-  participants: Participant[]
+  participants: Member[]
 }
 
 export default function ParticipantList({ participants }: ParticipantListProps) {
@@ -38,8 +39,13 @@ export default function ParticipantList({ participants }: ParticipantListProps) 
   return (
     <div className="grid grid-cols-1 gap-3">
       {participants.map((p) => {
-        const color = getAvatarColor(p.name)
+        const color = getAvatarColor(p.name, p.avatar_color)
         const char = getAvatarChar(p.name)
+        const yearLabel = p.graduation_year
+          ? `Class of ${p.graduation_year}${p.major ? ` / ${p.major}` : ''}`
+          : p.major || ''
+        const jobLabel = [p.company, p.job_title].filter(Boolean).join(' ')
+
         return (
           <div
             key={p.id}
@@ -61,12 +67,14 @@ export default function ParticipantList({ participants }: ParticipantListProps) 
               <p className="font-semibold text-sm truncate" style={{ color: '#1a1a1a' }}>
                 {p.name}
               </p>
-              <p className="text-xs truncate" style={{ color: '#888' }}>
-                {p.year}
-              </p>
-              {p.job && (
+              {yearLabel && (
+                <p className="text-xs truncate" style={{ color: '#888' }}>
+                  {yearLabel}
+                </p>
+              )}
+              {jobLabel && (
                 <p className="text-xs truncate" style={{ color: '#555' }}>
-                  {p.job}
+                  {jobLabel}
                 </p>
               )}
             </div>
@@ -76,5 +84,3 @@ export default function ParticipantList({ participants }: ParticipantListProps) 
     </div>
   )
 }
-
-export { getAvatarColor, getAvatarChar }
