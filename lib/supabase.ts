@@ -235,6 +235,26 @@ export async function getOrganizerEvents(memberId: string): Promise<Event[]> {
   return events ?? []
 }
 
+export async function getParticipantEvents(memberId: string): Promise<Event[]> {
+  const { data: eventMembers } = await supabase
+    .from('event_members')
+    .select('event_id')
+    .eq('member_id', memberId)
+    .eq('role', 'participant')
+
+  if (!eventMembers || eventMembers.length === 0) return []
+
+  const eventIds = eventMembers.map((em) => em.event_id)
+
+  const { data: events } = await supabase
+    .from('events')
+    .select('*')
+    .in('id', eventIds)
+    .order('date_start', { ascending: true })
+
+  return events ?? []
+}
+
 // ---- Chat Read Helpers ----
 
 export async function markMessagesAsRead(

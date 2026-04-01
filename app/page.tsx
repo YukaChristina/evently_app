@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { initDemoData } from '@/lib/supabase'
-import EventForm from '@/components/EventForm'
+import Link from 'next/link'
 
 export default function HomePage() {
   useEffect(() => {
@@ -10,23 +10,60 @@ export default function HomePage() {
   }, [])
 
   return (
-    <div className="min-h-screen px-4 py-6">
-      <div className="text-center mb-6">
-        <h1 className="text-xl font-bold" style={{ color: '#1a1a1a' }}>
-          イベントを作成する
+    <div className="min-h-screen px-4 py-10">
+      <div className="text-center mb-10">
+        <p className="text-4xl mb-2">🎉</p>
+        <h1 className="text-2xl font-black mb-1" style={{ color: '#1a1a1a' }}>
+          Evently
         </h1>
+        <p className="text-sm" style={{ color: '#888' }}>
+          コミュニティのイベント管理をかんたんに
+        </p>
       </div>
 
-      <div className="card">
-        <h2 className="text-lg font-bold mb-4" style={{ color: '#1a1a1a' }}>
-          新しいイベントを作成
-        </h2>
-        <EventForm />
-      </div>
+      <div className="flex flex-col gap-3">
+        <Link
+          href="/dashboard"
+          style={{ textDecoration: 'none' }}
+        >
+          <div
+            className="card flex items-center gap-4"
+            style={{ cursor: 'pointer' }}
+          >
+            <span style={{ fontSize: 32 }}>📅</span>
+            <div className="flex-1">
+              <p className="font-bold text-base" style={{ color: '#1a1a1a' }}>
+                マイイベント一覧
+              </p>
+              <p className="text-sm" style={{ color: '#888' }}>
+                参加・主催イベントをまとめて確認
+              </p>
+            </div>
+            <span className="text-xl" style={{ color: '#ccc' }}>›</span>
+          </div>
+        </Link>
 
-      <p className="text-center text-xs mt-6" style={{ color: '#bbb' }}>
-        データはSupabase（PostgreSQL）に保存されます
-      </p>
+        <Link
+          href="/create"
+          style={{ textDecoration: 'none' }}
+        >
+          <div
+            className="card flex items-center gap-4"
+            style={{ cursor: 'pointer' }}
+          >
+            <span style={{ fontSize: 32 }}>✨</span>
+            <div className="flex-1">
+              <p className="font-bold text-base" style={{ color: '#1a1a1a' }}>
+                イベントを作成する
+              </p>
+              <p className="text-sm" style={{ color: '#888' }}>
+                新しいイベントを企画・作成する
+              </p>
+            </div>
+            <span className="text-xl" style={{ color: '#ccc' }}>›</span>
+          </div>
+        </Link>
+      </div>
     </div>
   )
 }

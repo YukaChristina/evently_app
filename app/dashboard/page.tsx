@@ -7,8 +7,8 @@ import {
   getDefaultCommunity,
   getCurrentMember,
   getOrganizerEvents,
+  getParticipantEvents,
   getEventParticipants,
-  getAllEventMembers,
   formatDateJa,
   Event,
   Member,
@@ -77,7 +77,6 @@ function AnnouncementForm({
       is_pinned: false,
     })
 
-    // 全参加者にメール通知
     const toEmails = participants
       .filter((p) => p.member.email)
       .map((p) => p.member.email as string)
@@ -142,8 +141,319 @@ function AnnouncementForm({
   )
 }
 
+// 幹事用イベントカード（フル表示）
+function OrganizerEventCard({
+  event,
+  participants,
+  currentMemberId,
+  copied,
+  copiedLine,
+  confirmDelete,
+  expandedParticipants,
+  showAnnouncement,
+  onCopyUrl,
+  onCopyLine,
+  onDelete,
+  onConfirmDelete,
+  onCancelDelete,
+  onToggleExpand,
+  onToggleAnnouncement,
+}: {
+  event: Event
+  participants: ParticipantWithMember[]
+  currentMemberId: string
+  copied: string | null
+  copiedLine: string | null
+  confirmDelete: string | null
+  expandedParticipants: Set<string>
+  showAnnouncement: string | null
+  onCopyUrl: (id: string) => void
+  onCopyLine: (event: Event) => void
+  onDelete: (id: string) => void
+  onConfirmDelete: (id: string) => void
+  onCancelDelete: () => void
+  onToggleExpand: (id: string) => void
+  onToggleAnnouncement: (id: string) => void
+}) {
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/event/${event.id}` : ''
+  const capacity = event.capacity || 0
+  const isFull = participants.length >= capacity
+  const isExpanded = expandedParticipants.has(event.id)
+  const sorted = [...participants].sort(
+    (a, b) => new Date(b.joined_at).getTime() - new Date(a.joined_at).getTime()
+  )
+  const displayed = isExpanded ? sorted : sorted.slice(0, 5)
+  const hasMore = participants.length > 5
+  const dateStr = formatDateJa(event.date_start, event.date_end)
+
+  function getLineText() {
+    return `【${event.title}】\n📅 ${dateStr}\n📍 ${event.place_public}\n\n参加はこちらから👇\n${url}`
+  }
+
+  return (
+    <div className="card">
+      {/* Role badge */}
+      <div className="mb-2">
+        <span
+          className="text-xs font-bold px-2 py-0.5 rounded-full"
+          style={{ background: '#fff3cd', color: '#b8860b' }}
+        >
+          🔑 幹事
+        </span>
+      </div>
+
+      {/* Event header */}
+      <div className="flex justify-between items-start mb-1">
+        <div className="flex-1 min-w-0 mr-2">
+          <h2 className="font-bold text-base leading-tight" style={{ color: '#1a1a1a' }}>
+            {event.title}
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: '#888' }}>
+            {dateStr}
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: '#888' }}>
+            📍 {event.place_public}
+          </p>
+        </div>
+        <span
+          className="flex-shrink-0 text-xs font-bold px-2 py-1 rounded-full"
+          style={{
+            background: isFull ? '#ff4d4f' : '#e6f9ee',
+            color: isFull ? '#fff' : '#06C755',
+          }}
+        >
+          {participants.length}/{capacity}名
+        </span>
+      </div>
+
+      {/* Private location */}
+      <div className="mt-1 text-xs" style={{ color: '#555' }}>
+        🔑 実際の場所：{event.place_private}
+      </div>
+
+      {/* URL section */}
+      <div className="mt-3 p-3 rounded-xl" style={{ background: '#f0f4f8' }}>
+        <p className="text-xs font-bold mb-2" style={{ color: '#06C755' }}>
+          📢 LINEグループに貼る文面
+        </p>
+        <div
+          className="text-xs p-2 rounded-xl mb-2 whitespace-pre-wrap"
+          style={{ background: '#fff', color: '#333', lineHeight: 1.7 }}
+        >
+          {getLineText()}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onCopyLine(event)}
+            className="flex-1 text-xs font-bold py-1.5 rounded-full"
+            style={{
+              background: copiedLine === event.id ? '#00A040' : '#06C755',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {copiedLine === event.id ? '✓ コピー済' : '📋 文面をコピー'}
+          </button>
+          <button
+            onClick={() => onCopyUrl(event.id)}
+            className="flex-1 text-xs font-bold py-1.5 rounded-full"
+            style={{
+              background: '#fff',
+              color: '#06C755',
+              border: '1.5px solid #06C755',
+              cursor: 'pointer',
+            }}
+          >
+            {copied === event.id ? '✓ URL コピー済' : 'URLだけコピー'}
+          </button>
+        </div>
+      </div>
+
+      {/* Announcement */}
+      <div className="mt-3">
+        <button
+          onClick={() => onToggleAnnouncement(event.id)}
+          className="text-xs font-bold px-3 py-1.5 rounded-full w-full text-left"
+          style={{
+            background: showAnnouncement === event.id ? '#fff3cd' : '#f9f9f9',
+            color: '#333',
+            border: '1px solid #ddd',
+            cursor: 'pointer',
+          }}
+        >
+          {showAnnouncement === event.id ? '▲ お知らせを閉じる' : '📢 参加者へのお知らせを送る'}
+        </button>
+        {showAnnouncement === event.id && (
+          <AnnouncementForm
+            eventId={event.id}
+            memberId={currentMemberId}
+            participants={participants}
+            eventTitle={event.title}
+          />
+        )}
+      </div>
+
+      {/* Delete */}
+      {confirmDelete === event.id ? (
+        <div className="mt-3 flex items-center gap-2 p-2 rounded-xl" style={{ background: '#fff0f0' }}>
+          <p className="text-xs flex-1" style={{ color: '#ff4d4f' }}>本当に削除しますか？</p>
+          <button
+            onClick={() => onDelete(event.id)}
+            className="text-xs font-bold px-3 py-1 rounded-full"
+            style={{ background: '#ff4d4f', color: '#fff', border: 'none', cursor: 'pointer' }}
+          >
+            削除
+          </button>
+          <button
+            onClick={onCancelDelete}
+            className="text-xs font-bold px-3 py-1 rounded-full"
+            style={{ background: '#eee', color: '#555', border: 'none', cursor: 'pointer' }}
+          >
+            キャンセル
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => onConfirmDelete(event.id)}
+          className="mt-2 text-xs"
+          style={{ color: '#bbb', background: 'none', border: 'none', cursor: 'pointer' }}
+        >
+          🗑 このイベントを削除
+        </button>
+      )}
+
+      {/* Quick links */}
+      <div className="flex gap-2 mt-3">
+        <Link
+          href={`/event/${event.id}`}
+          className="flex-1 text-center text-xs font-bold py-2 rounded-full"
+          style={{ background: '#fff', color: '#06C755', border: '1.5px solid #06C755' }}
+        >
+          イベントページ
+        </Link>
+        <Link
+          href={`/chat/${event.id}`}
+          className="flex-1 text-center text-xs font-bold py-2 rounded-full"
+          style={{ background: '#fff', color: '#45B7D1', border: '1.5px solid #45B7D1' }}
+        >
+          💬 チャット
+        </Link>
+      </div>
+
+      {/* Participants */}
+      {sorted.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs font-bold mb-2" style={{ color: '#888' }}>
+            参加者一覧
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {displayed.map((p) => (
+              <div key={p.id} className="flex items-center gap-2">
+                <div
+                  className="flex-shrink-0 flex items-center justify-center rounded-full text-white text-xs font-bold"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    background: getAvatarColor(p.member.name, p.member.avatar_color),
+                  }}
+                >
+                  {p.member.name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold truncate" style={{ color: '#1a1a1a' }}>
+                    {p.member.name}
+                  </span>
+                  {p.member.graduation_year && (
+                    <span className="text-xs ml-2" style={{ color: '#888' }}>
+                      Class of {p.member.graduation_year}
+                      {p.member.major ? ` / ${p.member.major}` : ''}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs flex-shrink-0" style={{ color: '#bbb' }}>
+                  {formatTime(p.joined_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+          {hasMore && (
+            <button
+              onClick={() => onToggleExpand(event.id)}
+              className="text-xs mt-2 font-bold"
+              style={{ color: '#06C755', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              {isExpanded ? '▲ 折りたたむ' : `▼ 他${participants.length - 5}名を表示`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 参加者用シンプルカード
+function ParticipantEventCard({ event }: { event: Event }) {
+  const capacity = event.capacity || 0
+  const dateStr = formatDateJa(event.date_start, event.date_end)
+
+  return (
+    <div className="card">
+      {/* Role badge */}
+      <div className="mb-2">
+        <span
+          className="text-xs font-bold px-2 py-0.5 rounded-full"
+          style={{ background: '#e6f9ee', color: '#06C755' }}
+        >
+          ✅ 参加者
+        </span>
+      </div>
+
+      <div className="flex justify-between items-start mb-2">
+        <div className="flex-1 min-w-0 mr-2">
+          <h2 className="font-bold text-base leading-tight" style={{ color: '#1a1a1a' }}>
+            {event.title}
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: '#888' }}>
+            {dateStr}
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: '#888' }}>
+            📍 {event.place_public}
+          </p>
+        </div>
+        {capacity > 0 && (
+          <span
+            className="flex-shrink-0 text-xs font-bold px-2 py-1 rounded-full"
+            style={{ background: '#e6f9ee', color: '#06C755' }}
+          >
+            定員{capacity}名
+          </span>
+        )}
+      </div>
+
+      <div className="flex gap-2 mt-3">
+        <Link
+          href={`/event/${event.id}`}
+          className="flex-1 text-center text-xs font-bold py-2 rounded-full"
+          style={{ background: '#fff', color: '#06C755', border: '1.5px solid #06C755' }}
+        >
+          イベント詳細
+        </Link>
+        <Link
+          href={`/chat/${event.id}`}
+          className="flex-1 text-center text-xs font-bold py-2 rounded-full"
+          style={{ background: '#45B7D1', color: '#fff' }}
+        >
+          💬 参加者チャット
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
-  const [data, setData] = useState<EventWithParticipants[]>([])
+  const [organizerData, setOrganizerData] = useState<EventWithParticipants[]>([])
+  const [participantEvents, setParticipantEvents] = useState<Event[]>([])
   const [copied, setCopied] = useState<string | null>(null)
   const [copiedLine, setCopiedLine] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -163,15 +473,19 @@ export default function DashboardPage() {
 
     setCurrentMember(member)
 
-    const events = await getOrganizerEvents(member.id)
-    const result: EventWithParticipants[] = []
-
-    for (const event of events) {
+    // 幹事イベント
+    const orgEvents = await getOrganizerEvents(member.id)
+    const orgResult: EventWithParticipants[] = []
+    for (const event of orgEvents) {
       const participants = await getEventParticipants(event.id)
-      result.push({ event, participants })
+      orgResult.push({ event, participants })
     }
+    setOrganizerData(orgResult)
 
-    setData(result)
+    // 参加者イベント
+    const partEvents = await getParticipantEvents(member.id)
+    setParticipantEvents(partEvents)
+
     setLoading(false)
   }
 
@@ -179,13 +493,8 @@ export default function DashboardPage() {
     load()
   }, [])
 
-  function getEventUrl(eventId: string) {
-    if (typeof window === 'undefined') return ''
-    return `${window.location.origin}/event/${eventId}`
-  }
-
   async function copyUrl(eventId: string) {
-    const url = getEventUrl(eventId)
+    const url = `${window.location.origin}/event/${eventId}`
     try {
       await navigator.clipboard.writeText(url)
       setCopied(eventId)
@@ -193,14 +502,10 @@ export default function DashboardPage() {
     } catch {}
   }
 
-  function getLineText(event: Event, url: string) {
-    const dateStr = formatDateJa(event.date_start, event.date_end)
-    return `【${event.title}】\n📅 ${dateStr}\n📍 ${event.place_public}\n\n参加はこちらから👇\n${url}`
-  }
-
   async function copyLineText(event: Event) {
-    const url = getEventUrl(event.id)
-    const text = getLineText(event, url)
+    const url = `${window.location.origin}/event/${event.id}`
+    const dateStr = formatDateJa(event.date_start, event.date_end)
+    const text = `【${event.title}】\n📅 ${dateStr}\n📍 ${event.place_public}\n\n参加はこちらから👇\n${url}`
     try {
       await navigator.clipboard.writeText(text)
       setCopiedLine(event.id)
@@ -214,7 +519,20 @@ export default function DashboardPage() {
     await supabase.from('announcements').delete().eq('event_id', eventId)
     await supabase.from('events').delete().eq('id', eventId)
     setConfirmDelete(null)
-    setData((prev) => prev.filter((d) => d.event.id !== eventId))
+    setOrganizerData((prev) => prev.filter((d) => d.event.id !== eventId))
+  }
+
+  function toggleExpand(eventId: string) {
+    setExpandedParticipants((prev) => {
+      const next = new Set(prev)
+      if (next.has(eventId)) next.delete(eventId)
+      else next.add(eventId)
+      return next
+    })
+  }
+
+  function toggleAnnouncement(eventId: string) {
+    setShowAnnouncement((prev) => (prev === eventId ? null : eventId))
   }
 
   if (loading) {
@@ -225,34 +543,34 @@ export default function DashboardPage() {
     )
   }
 
+  const hasAnyEvent = organizerData.length > 0 || participantEvents.length > 0
+
   return (
     <div className="min-h-screen px-4 py-6">
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-black" style={{ color: '#1a1a1a' }}>
-            イベント管理画面
-          </h1>
-        </div>
+        <h1 className="text-2xl font-black" style={{ color: '#1a1a1a' }}>
+          マイイベント
+        </h1>
         <Link
-          href="/"
+          href="/create"
           className="text-sm font-bold px-4 py-2 rounded-full"
           style={{ background: '#06C755', color: '#fff' }}
         >
-          ＋ イベントを作成する
+          ＋ 作成
         </Link>
       </div>
 
-      {data.length === 0 ? (
+      {!hasAnyEvent ? (
         <div className="card text-center py-10">
           <p className="text-4xl mb-3">📅</p>
           <p className="font-bold" style={{ color: '#1a1a1a' }}>
             イベントがありません
           </p>
           <p className="text-sm mt-1" style={{ color: '#888' }}>
-            トップページからイベントを作成してください
+            イベントを作成するか、参加リンクから申し込んでください
           </p>
           <Link
-            href="/"
+            href="/create"
             className="inline-block mt-4 text-sm font-bold px-6 py-2 rounded-full"
             style={{ background: '#06C755', color: '#fff' }}
           >
@@ -260,224 +578,59 @@ export default function DashboardPage() {
           </Link>
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
-          {data.map(({ event, participants }) => {
-            const url = getEventUrl(event.id)
-            const capacity = event.capacity || 0
-            const isFull = participants.length >= capacity
-            const isExpanded = expandedParticipants.has(event.id)
-            const sorted = [...participants].sort(
-              (a, b) => new Date(b.joined_at).getTime() - new Date(a.joined_at).getTime()
-            )
-            const displayed = isExpanded ? sorted : sorted.slice(0, 5)
-            const hasMore = participants.length > 5
-            const dateStr = formatDateJa(event.date_start, event.date_end)
-
-            return (
-              <div key={event.id} className="card">
-                {/* Event header */}
-                <div className="flex justify-between items-start mb-1">
-                  <div className="flex-1 min-w-0 mr-2">
-                    <h2 className="font-bold text-base leading-tight" style={{ color: '#1a1a1a' }}>
-                      {event.title}
-                    </h2>
-                    <p className="text-xs mt-0.5" style={{ color: '#888' }}>
-                      {dateStr}
-                    </p>
-                    <p className="text-xs mt-0.5" style={{ color: '#888' }}>
-                      📍 {event.place_public}
-                    </p>
-                  </div>
-                  <span
-                    className="flex-shrink-0 text-xs font-bold px-2 py-1 rounded-full"
-                    style={{
-                      background: isFull ? '#ff4d4f' : '#e6f9ee',
-                      color: isFull ? '#fff' : '#06C755',
-                    }}
-                  >
-                    {participants.length}/{capacity}名
-                  </span>
-                </div>
-
-                {/* Private location */}
-                <div className="mt-1 text-xs" style={{ color: '#555' }}>
-                  🔑 実際の場所：{event.place_private}
-                </div>
-
-                {/* URL section */}
-                <div className="mt-3 p-3 rounded-xl" style={{ background: '#f0f4f8' }}>
-                  <p className="text-xs font-bold mb-2" style={{ color: '#06C755' }}>
-                    📢 LINEグループに貼る文面
-                  </p>
-                  {/* LINE文面プレビュー */}
-                  <div
-                    className="text-xs p-2 rounded-xl mb-2 whitespace-pre-wrap"
-                    style={{ background: '#fff', color: '#333', lineHeight: 1.7 }}
-                  >
-                    {getLineText(event, url)}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => copyLineText(event)}
-                      className="flex-1 text-xs font-bold py-1.5 rounded-full"
-                      style={{
-                        background: copiedLine === event.id ? '#00A040' : '#06C755',
-                        color: '#fff',
-                        border: 'none',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {copiedLine === event.id ? '✓ コピー済' : '📋 文面をコピー'}
-                    </button>
-                    <button
-                      onClick={() => copyUrl(event.id)}
-                      className="flex-1 text-xs font-bold py-1.5 rounded-full"
-                      style={{
-                        background: '#fff',
-                        color: '#06C755',
-                        border: '1.5px solid #06C755',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {copied === event.id ? '✓ URL コピー済' : 'URLだけコピー'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Announcement */}
-                <div className="mt-3">
-                  <button
-                    onClick={() =>
-                      setShowAnnouncement(
-                        showAnnouncement === event.id ? null : event.id
-                      )
-                    }
-                    className="text-xs font-bold px-3 py-1.5 rounded-full w-full text-left"
-                    style={{
-                      background: showAnnouncement === event.id ? '#fff3cd' : '#f9f9f9',
-                      color: '#333',
-                      border: '1px solid #ddd',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {showAnnouncement === event.id ? '▲ お知らせを閉じる' : '📢 参加者へのお知らせを送る'}
-                  </button>
-                  {showAnnouncement === event.id && currentMember && (
-                    <AnnouncementForm
-                      eventId={event.id}
-                      memberId={currentMember.id}
-                      participants={participants}
-                      eventTitle={event.title}
-                    />
-                  )}
-                </div>
-
-                {/* Delete */}
-                {confirmDelete === event.id ? (
-                  <div className="mt-3 flex items-center gap-2 p-2 rounded-xl" style={{ background: '#fff0f0' }}>
-                    <p className="text-xs flex-1" style={{ color: '#ff4d4f' }}>本当に削除しますか？</p>
-                    <button
-                      onClick={() => handleDelete(event.id)}
-                      className="text-xs font-bold px-3 py-1 rounded-full"
-                      style={{ background: '#ff4d4f', color: '#fff', border: 'none', cursor: 'pointer' }}
-                    >
-                      削除
-                    </button>
-                    <button
-                      onClick={() => setConfirmDelete(null)}
-                      className="text-xs font-bold px-3 py-1 rounded-full"
-                      style={{ background: '#eee', color: '#555', border: 'none', cursor: 'pointer' }}
-                    >
-                      キャンセル
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setConfirmDelete(event.id)}
-                    className="mt-2 text-xs"
-                    style={{ color: '#bbb', background: 'none', border: 'none', cursor: 'pointer' }}
-                  >
-                    🗑 このイベントを削除
-                  </button>
-                )}
-
-                {/* Quick links */}
-                <div className="flex gap-2 mt-3">
-                  <Link
-                    href={`/event/${event.id}`}
-                    className="flex-1 text-center text-xs font-bold py-2 rounded-full"
-                    style={{ background: '#fff', color: '#06C755', border: '1.5px solid #06C755' }}
-                  >
-                    イベントページ
-                  </Link>
-                  <Link
-                    href={`/chat/${event.id}`}
-                    className="flex-1 text-center text-xs font-bold py-2 rounded-full"
-                    style={{ background: '#fff', color: '#45B7D1', border: '1.5px solid #45B7D1' }}
-                  >
-                    💬 チャット
-                  </Link>
-                </div>
-
-                {/* Participants */}
-                {sorted.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-xs font-bold mb-2" style={{ color: '#888' }}>
-                      参加者一覧
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      {displayed.map((p) => (
-                        <div key={p.id} className="flex items-center gap-2">
-                          <div
-                            className="flex-shrink-0 flex items-center justify-center rounded-full text-white text-xs font-bold"
-                            style={{
-                              width: 28,
-                              height: 28,
-                              background: getAvatarColor(p.member.name, p.member.avatar_color),
-                            }}
-                          >
-                            {p.member.name.charAt(0)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <span className="text-sm font-semibold truncate" style={{ color: '#1a1a1a' }}>
-                              {p.member.name}
-                            </span>
-                            {p.member.graduation_year && (
-                              <span className="text-xs ml-2" style={{ color: '#888' }}>
-                                Class of {p.member.graduation_year}
-                                {p.member.major ? ` / ${p.member.major}` : ''}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-xs flex-shrink-0" style={{ color: '#bbb' }}>
-                            {formatTime(p.joined_at)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    {hasMore && (
-                      <button
-                        onClick={() =>
-                          setExpandedParticipants((prev) => {
-                            const next = new Set(prev)
-                            if (isExpanded) next.delete(event.id)
-                            else next.add(event.id)
-                            return next
-                          })
-                        }
-                        className="text-xs mt-2 font-bold"
-                        style={{ color: '#06C755', background: 'none', border: 'none', cursor: 'pointer' }}
-                      >
-                        {isExpanded ? '▲ 折りたたむ' : `▼ 他${participants.length - 5}名を表示`}
-                      </button>
-                    )}
-                  </div>
-                )}
+        <div className="flex flex-col gap-6">
+          {/* 幹事セクション */}
+          {organizerData.length > 0 && (
+            <div>
+              <p className="text-xs font-bold mb-3" style={{ color: '#b8860b' }}>
+                🔑 幹事として担当するイベント（{organizerData.length}件）
+              </p>
+              <div className="flex flex-col gap-4">
+                {organizerData.map(({ event, participants }) => (
+                  <OrganizerEventCard
+                    key={event.id}
+                    event={event}
+                    participants={participants}
+                    currentMemberId={currentMember?.id ?? ''}
+                    copied={copied}
+                    copiedLine={copiedLine}
+                    confirmDelete={confirmDelete}
+                    expandedParticipants={expandedParticipants}
+                    showAnnouncement={showAnnouncement}
+                    onCopyUrl={copyUrl}
+                    onCopyLine={copyLineText}
+                    onDelete={handleDelete}
+                    onConfirmDelete={setConfirmDelete}
+                    onCancelDelete={() => setConfirmDelete(null)}
+                    onToggleExpand={toggleExpand}
+                    onToggleAnnouncement={toggleAnnouncement}
+                  />
+                ))}
               </div>
-            )
-          })}
+            </div>
+          )}
+
+          {/* 参加者セクション */}
+          {participantEvents.length > 0 && (
+            <div>
+              <p className="text-xs font-bold mb-3" style={{ color: '#06C755' }}>
+                ✅ 参加予定のイベント（{participantEvents.length}件）
+              </p>
+              <div className="flex flex-col gap-4">
+                {participantEvents.map((event) => (
+                  <ParticipantEventCard key={event.id} event={event} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      <div className="text-center mt-6">
+        <Link href="/" className="text-xs" style={{ color: '#888' }}>
+          ← ホームへ
+        </Link>
+      </div>
     </div>
   )
 }
