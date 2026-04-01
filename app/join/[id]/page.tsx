@@ -3,16 +3,19 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase, initDemoData, getEventParticipants, formatDateJa, Event } from '@/lib/supabase'
+import { useRequireAuth } from '@/lib/useRequireAuth'
 import JoinForm from '@/components/JoinForm'
 import Link from 'next/link'
 
 export default function JoinPage() {
   const { id } = useParams<{ id: string }>()
+  const { ready } = useRequireAuth()
   const [event, setEvent] = useState<Event | null>(null)
   const [participantCount, setParticipantCount] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!ready) return
     async function load() {
       await initDemoData()
 
@@ -34,7 +37,7 @@ export default function JoinPage() {
       setLoading(false)
     }
     load()
-  }, [id])
+  }, [id, ready])
 
   if (loading) {
     return (

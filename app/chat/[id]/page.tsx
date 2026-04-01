@@ -12,9 +12,11 @@ import {
   Member,
 } from '@/lib/supabase'
 import ChatBox from '@/components/ChatBox'
+import { useRequireAuth } from '@/lib/useRequireAuth'
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>()
+  const { ready } = useRequireAuth()
   const router = useRouter()
   const [event, setEvent] = useState<Event | null>(null)
   const [myMember, setMyMember] = useState<Member | null>(null)
@@ -23,6 +25,7 @@ export default function ChatPage() {
   const allMembersRef = useRef<Member[]>([])
 
   useEffect(() => {
+    if (!ready) return
     async function load() {
       const { data: eventData } = await supabase
         .from('events')
@@ -53,7 +56,7 @@ export default function ChatPage() {
       setLoading(false)
     }
     load()
-  }, [id, router])
+  }, [id, router, ready])
 
   async function handleSend(body: string, senderName: string) {
     if (!event) return

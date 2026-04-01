@@ -15,6 +15,7 @@ import {
   EventMember,
 } from '@/lib/supabase'
 import Link from 'next/link'
+import { useRequireAuth } from '@/lib/useRequireAuth'
 
 const AVATAR_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
@@ -452,6 +453,7 @@ function ParticipantEventCard({ event }: { event: Event }) {
 }
 
 export default function DashboardPage() {
+  const { ready } = useRequireAuth()
   const [organizerData, setOrganizerData] = useState<EventWithParticipants[]>([])
   const [participantEvents, setParticipantEvents] = useState<Event[]>([])
   const [copied, setCopied] = useState<string | null>(null)
@@ -490,8 +492,9 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    if (!ready) return
     load()
-  }, [])
+  }, [ready])
 
   async function copyUrl(eventId: string) {
     const url = `${window.location.origin}/event/${eventId}`

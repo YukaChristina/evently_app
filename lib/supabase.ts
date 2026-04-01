@@ -128,14 +128,40 @@ export async function getDefaultCommunity(): Promise<Community | null> {
 // ---- Member Helpers ----
 
 export async function getCurrentMember(communityId: string): Promise<Member | null> {
-  // 本番環境ではテストアカウントを使わない
-  if (process.env.NEXT_PUBLIC_ENV !== 'development') return null
-  const account = getTestAccount()
-  if (!account) return null
+  let email: string | null = null
+
+  if (process.env.NEXT_PUBLIC_ENV === 'development') {
+    // 開発環境: テストアカウントを使う
+    const account = getTestAccount()
+    if (!account) return null
+    email = account.email
+  } else {
+    // 本番環境: Supabase Auth から取得
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) return null
+    email = user.email
+
+    // members に auth_user_id が未設定なら紐づける
+    const { data: existing } = await supabase
+      .from('members')
+      .select('*')
+      .eq('email', email)
+      .eq('community_id', communityId)
+      .single()
+    if (existing && !existing.auth_user_id) {
+      await supabase
+        .from('members')
+        .update({ auth_user_id: user.id })
+        .eq('id', existing.id)
+      return { ...existing, auth_user_id: user.id }
+    }
+    return existing
+  }
+
   const { data } = await supabase
     .from('members')
     .select('*')
-    .eq('email', account.email)
+    .eq('email', email)
     .eq('community_id', communityId)
     .single()
   return data

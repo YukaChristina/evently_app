@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { supabase, getDefaultCommunity, getOrCreateMember, getTestAccount, formatDateJa } from '@/lib/supabase'
+import { supabase, getDefaultCommunity, getOrCreateMember, formatDateJa, Member } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
 const PROFILE_KEY = 'evently_saved_profile'
@@ -46,9 +46,40 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
-  // TestLoginBarが切り替わったときに再同期
+  // TestLoginBarが切り替わったときに再同期 (dev) / authから自動入力 (prod)
   useEffect(() => {
-    setForm(getInitialForm())
+    const isDev = process.env.NEXT_PUBLIC_ENV === 'development'
+    if (isDev) {
+      setForm(getInitialForm())
+      return
+    }
+    // 本番: authユーザーのメアドを取得 → 既存メンバーレコードで全項目を入力
+    async function prefill() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user?.email) return
+      setForm((prev: typeof form) => ({ ...prev, email: user.email! }))
+
+      const community = await getDefaultCommunity()
+      if (!community) return
+      const { data: member } = await supabase
+        .from('members')
+        .select('*')
+        .eq('email', user.email)
+        .eq('community_id', community.id)
+        .single() as { data: Member | null }
+
+      if (member) {
+        setForm({
+          name: member.name ?? '',
+          graduationYear: String(member.graduation_year ?? ''),
+          major: member.major ?? '',
+          company: member.company ?? '',
+          jobTitle: member.job_title ?? '',
+          email: member.email ?? '',
+        })
+      }
+    }
+    prefill()
   }, [])
 
   function validate() {
