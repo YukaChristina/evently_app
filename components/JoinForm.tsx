@@ -4,8 +4,6 @@ import { useState, useEffect } from 'react'
 import { supabase, getDefaultCommunity, getOrCreateMember, formatDateJa, Member } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-const PROFILE_KEY = 'evently_saved_profile'
-
 type JoinFormProps = {
   eventId: string
   isFull: boolean
@@ -15,7 +13,6 @@ function getInitialForm() {
   if (typeof window === 'undefined') {
     return { name: '', graduationYear: '', major: '', company: '', jobTitle: '', email: '' }
   }
-  // テストアカウントから初期値を取得（sessionStorageは同期アクセス可能）
   try {
     const stored = sessionStorage.getItem('evently_test_account')
     if (stored) {
@@ -30,30 +27,29 @@ function getInitialForm() {
       }
     }
   } catch {}
-  // 保存済みプロフィールから取得
-  try {
-    const saved = localStorage.getItem(PROFILE_KEY)
-    if (saved) return { ...{ name: '', graduationYear: '', major: '', company: '', jobTitle: '', email: '' }, ...JSON.parse(saved) }
-  } catch {}
   return { name: '', graduationYear: '', major: '', company: '', jobTitle: '', email: '' }
 }
 
 export default function JoinForm({ eventId, isFull }: JoinFormProps) {
   const router = useRouter()
   const [form, setForm] = useState(getInitialForm)
-  const [saveProfile, setSaveProfile] = useState(false)
   const [errors, setErrors] = useState<Partial<Record<keyof typeof form, string>>>({})
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
-  // TestLoginBarが切り替わったときに再同期 (dev) / authから自動入力 (prod)
+  // OTP認証ステップ
+  const [showOtp, setShowOtp] = useState(false)
+  const [otp, setOtp] = useState('')
+  const [otpError, setOtpError] = useState('')
+  const [otpVerifying, setOtpVerifying] = useState(false)
+
+  // 本番: authユーザーから自動入力
   useEffect(() => {
     const isDev = process.env.NEXT_PUBLIC_ENV === 'development'
     if (isDev) {
       setForm(getInitialForm())
       return
     }
-    // 本番: authユーザーのメアドを取得 → 既存メンバーレコードで全項目を入力
     async function prefill() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user?.email) return
@@ -109,6 +105,54 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
       return
     }
 
+    // ログイン済みかチェック
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      // 未ログイン → フォームのメアドにOTPを送信
+      setSubmitting(true)
+      const { error } = await supabase.auth.signInWithOtp({
+        email: form.email.trim().toLowerCase(),
+        options: { shouldCreateUser: true },
+      })
+      setSubmitting(false)
+      if (error) {
+        if (error.message.includes('rate limit')) {
+          setErrorMsg('送信回数の上限に達しました。しばらく待ってから再試行してください。')
+        } else {
+          setErrorMsg(`確認コードの送信に失敗しました：${error.message}`)
+        }
+        return
+      }
+      setShowOtp(true)
+      return
+    }
+
+    // ログイン済み → そのまま登録処理
+    await doRegister()
+  }
+
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault()
+    setOtpVerifying(true)
+    setOtpError('')
+
+    const { error } = await supabase.auth.verifyOtp({
+      email: form.email.trim().toLowerCase(),
+      token: otp,
+      type: 'email',
+    })
+
+    if (error) {
+      setOtpError('コードが正しくありません。もう一度お試しください。')
+      setOtpVerifying(false)
+      return
+    }
+
+    // 認証完了 → 登録処理へ
+    await doRegister()
+  }
+
+  async function doRegister() {
     setSubmitting(true)
     setErrorMsg('')
 
@@ -137,7 +181,6 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
         return
       }
 
-      // upsert: 既に参加済みでも冪等に処理
       const { error: joinError } = await supabase
         .from('event_members')
         .upsert(
@@ -146,7 +189,6 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
         )
 
       if (joinError) {
-        console.error('event_members upsert error:', joinError)
         setErrorMsg('参加登録に失敗しました: ' + joinError.message)
         setSubmitting(false)
         return
@@ -178,25 +220,8 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
         })
       }
 
-      // Save member info to sessionStorage for chat
       sessionStorage.setItem('evently_my_member_id', member.id)
       sessionStorage.setItem('evently_my_name', form.name.trim())
-
-      if (saveProfile) {
-        localStorage.setItem(
-          PROFILE_KEY,
-          JSON.stringify({
-            name: form.name.trim(),
-            graduationYear: form.graduationYear,
-            major: form.major.trim(),
-            company: form.company.trim(),
-            jobTitle: form.jobTitle.trim(),
-            email: form.email.trim(),
-          })
-        )
-      } else {
-        localStorage.removeItem(PROFILE_KEY)
-      }
 
       router.push(`/join-done?eventId=${eventId}`)
     } catch {
@@ -207,23 +232,72 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
 
   if (isFull) {
     return (
-      <div
-        className="text-center py-8 rounded-2xl"
-        style={{ background: '#fff0f0', color: '#ff4d4f' }}
-      >
+      <div className="text-center py-8 rounded-2xl" style={{ background: '#fff0f0', color: '#ff4d4f' }}>
         <p className="text-2xl font-bold mb-2">😢 満席です</p>
         <p className="text-sm">このイベントは定員に達しました</p>
       </div>
     )
   }
 
+  // OTP入力ステップ
+  if (showOtp) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="p-4 rounded-xl" style={{ background: '#e6f9ee' }}>
+          <p className="text-sm font-bold mb-1" style={{ color: '#06C755' }}>
+            確認コードを送信しました ✉️
+          </p>
+          <p className="text-xs" style={{ color: '#555' }}>
+            <span className="font-bold">{form.email}</span> に8桁のコードをお送りしました
+          </p>
+        </div>
+
+        <div className="p-3 rounded-xl text-xs" style={{ background: '#fff9e6', color: '#b8860b' }}>
+          この確認は、このアプリを初めて使う<span className="font-bold">今回だけ</span>です。
+          次回からはメールアドレスを入力するだけで自動的にログインされます。
+        </div>
+
+        <form onSubmit={handleVerifyOtp} className="flex flex-col gap-3">
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={8}
+            className="input-field text-center text-2xl font-bold tracking-widest"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+            placeholder="00000000"
+            required
+            autoFocus
+          />
+          {otpError && (
+            <p className="text-xs" style={{ color: '#ff4d4f' }}>{otpError}</p>
+          )}
+          <button
+            type="submit"
+            disabled={otp.length < 6 || otpVerifying}
+            className="btn-primary"
+          >
+            {otpVerifying ? '確認中...' : '確認して参加登録を完了する'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowOtp(false); setOtp(''); setOtpError('') }}
+            className="text-xs text-center"
+            style={{ color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            ← フォームに戻る
+          </button>
+        </form>
+      </div>
+    )
+  }
+
+  // 通常フォーム
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {errorMsg && (
-        <div
-          className="p-3 rounded-xl text-sm"
-          style={{ background: '#fff0f0', color: '#ff4d4f' }}
-        >
+        <div className="p-3 rounded-xl text-sm" style={{ background: '#fff0f0', color: '#ff4d4f' }}>
           {errorMsg}
         </div>
       )}
@@ -237,11 +311,7 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
           onChange={handleChange}
           placeholder="例：田中 美咲"
         />
-        {errors.name && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.name}
-          </p>
-        )}
+        {errors.name && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.name}</p>}
       </div>
 
       <div>
@@ -256,11 +326,7 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
           min={1990}
           max={2030}
         />
-        {errors.graduationYear && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.graduationYear}
-          </p>
-        )}
+        {errors.graduationYear && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.graduationYear}</p>}
       </div>
 
       <div>
@@ -272,11 +338,7 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
           onChange={handleChange}
           placeholder="例：マーケティング"
         />
-        {errors.major && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.major}
-          </p>
-        )}
+        {errors.major && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.major}</p>}
       </div>
 
       <div>
@@ -311,27 +373,11 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
           onChange={handleChange}
           placeholder="例：your@email.com"
         />
-        {errors.email && (
-          <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>
-            {errors.email}
-          </p>
-        )}
+        {errors.email && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.email}</p>}
       </div>
 
-      <label className="flex items-center gap-2 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={saveProfile}
-          onChange={(e) => setSaveProfile(e.target.checked)}
-          style={{ accentColor: '#06C755', width: 18, height: 18 }}
-        />
-        <span className="text-sm" style={{ color: '#555' }}>
-          プロフィールを保存する（次回から自動入力）
-        </span>
-      </label>
-
       <button type="submit" className="btn-primary" disabled={submitting}>
-        {submitting ? '申込中...' : '参加を申し込む'}
+        {submitting ? '送信中...' : '参加を申し込む'}
       </button>
     </form>
   )

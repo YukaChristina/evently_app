@@ -2,16 +2,12 @@
 
 import { useEffect } from 'react'
 import { initDemoData } from '@/lib/supabase'
-import { useRequireAuth } from '@/lib/useRequireAuth'
 import Link from 'next/link'
 
 export default function HomePage() {
-  const { ready } = useRequireAuth()
-
   useEffect(() => {
-    if (!ready) return
     initDemoData()
-  }, [ready])
+  }, [])
 
   return (
     <div className="min-h-screen px-4 py-10">
