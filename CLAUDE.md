@@ -15,12 +15,12 @@
 ```
 evently_app/
 ├── app/
-│   ├── page.tsx               # ホーム画面（認証保護済み・ナビゲーション）
-│   ├── login/page.tsx         # ログイン画面（メールOTP 2ステップ）
-│   ├── dashboard/page.tsx     # マイイベント一覧（幹事カード＋参加者カード）
-│   ├── create/page.tsx        # イベント作成画面
-│   ├── event/[id]/page.tsx    # イベント詳細ページ（公開、ロール別表示）
-│   ├── join/[id]/page.tsx     # 参加申込画面（認証保護済み）
+│   ├── page.tsx               # ホーム画面（認証不要・ナビゲーション）
+│   ├── login/page.tsx         # ログイン画面（メールOTP 2ステップ・ダッシュボード直アクセス時のみ使用）
+│   ├── dashboard/page.tsx     # マイイベント一覧（認証保護済み・幹事カード＋参加者カード）
+│   ├── create/page.tsx        # イベント作成画面（認証不要・送信時にインラインOTP）
+│   ├── event/[id]/page.tsx    # イベント詳細ページ（公開・ロール別表示）
+│   ├── join/[id]/page.tsx     # 参加申込画面（認証不要・送信時にインラインOTP）
 │   ├── join-done/page.tsx     # 参加確定画面
 │   ├── chat/[id]/page.tsx     # 参加者チャット画面（認証保護済み）
 │   ├── api/send-email/route.ts # メール送信API（Resend）
@@ -28,8 +28,8 @@ evently_app/
 ├── components/
 │   ├── Header.tsx             # 共通ヘッダー（ロゴ・マイイベントリンク・ログアウトボタン）
 │   ├── TestLoginBar.tsx       # 開発環境専用テストアカウント切替バー
-│   ├── EventForm.tsx          # イベント作成フォーム（日時自動補完・リマインダー設定）
-│   ├── JoinForm.tsx           # 参加申込フォーム（auth情報から自動入力）
+│   ├── EventForm.tsx          # イベント作成フォーム（日時自動補完・リマインダー・インラインOTP）
+│   ├── JoinForm.tsx           # 参加申込フォーム（auth情報から自動入力・インラインOTP）
 │   ├── ChatBox.tsx            # チャットUI（Realtime購読・既読件数表示）
 │   ├── ParticipantList.tsx    # 参加者一覧
 │   └── StatusBar.tsx          # 残席数バー
@@ -40,10 +40,25 @@ evently_app/
 ```
 
 ## 認証フロー
-- 本番：メールOTP（`supabase.auth.signInWithOtp` → `verifyOtp`）
-- 開発：`NEXT_PUBLIC_ENV=development` のときはテストアカウントを使用、認証バイパス
-- 保護対象ページ：`/`・`/dashboard`・`/create`・`/join/[id]`・`/chat/[id]`
-- 公開ページ：`/event/[id]`・`/login`
+### 設計思想
+ユーザーにログインを意識させない。フォーム送信のタイミングで初めて認証を求める。
+
+### 認証が発生するタイミング
+- **イベント作成**（EventForm）：送信ボタン押下時、未ログインなら「メアド入力 → 8桁OTP入力」をフォーム内にインライン表示
+- **参加申込**（JoinForm）：送信ボタン押下時、未ログインならフォームのメアドにOTPを自動送信し、インラインでコード入力を表示
+- **ダッシュボード直アクセス**（/dashboard）：`useRequireAuth` により /login にリダイレクト
+- **チャット直アクセス**（/chat/[id]）：`useRequireAuth` により /login にリダイレクト
+
+### 初回ログインメッセージ
+OTPステップでは「この確認は、このアプリを初めて使う今回だけです。次回からは自動でログインされます。」と表示。
+
+### 開発環境
+`NEXT_PUBLIC_ENV=development` のときはテストアカウントを使用し、OTP認証をバイパス。
+
+### 保護対象ページ
+- 認証保護（useRequireAuth）：`/dashboard`・`/chat/[id]`
+- 認証不要（インラインOTP）：`/create`・`/join/[id]`
+- 完全公開：`/`・`/event/[id]`・`/login`
 
 ## 環境変数
 ```
@@ -52,6 +67,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY   # Supabase anon key
 NEXT_PUBLIC_ENV                 # "development" のみテストアカウント有効
 RESEND_API_KEY                  # メール送信（未設定時はモック動作）
 ```
+
+## Supabase設定
+- Authentication → URL Configuration → Site URL：本番URL（https://evently-lac-chi.vercel.app/）
+- Authentication → Email Templates → Magic Link：`{{ .Token }}` で8桁コードを表示するテンプレートに変更済み
+- OTPは8桁（Supabaseデフォルト）
 
 ## Supabaseテーブル構成
 ```
