@@ -30,7 +30,11 @@ function LoginForm() {
       options: { shouldCreateUser: true },
     })
     if (error) {
-      setError('送信に失敗しました。メールアドレスを確認してください。')
+      if (error.message.includes('rate limit') || error.message.includes('Email rate limit')) {
+        setError('送信回数の上限に達しました。しばらく待ってから再試行してください。')
+      } else {
+        setError(`送信に失敗しました：${error.message}`)
+      }
     } else {
       setStep('otp')
     }
