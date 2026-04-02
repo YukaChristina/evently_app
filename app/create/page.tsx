@@ -4,15 +4,11 @@ import { useEffect } from 'react'
 import { initDemoData } from '@/lib/supabase'
 import EventForm from '@/components/EventForm'
 import Link from 'next/link'
-import { useRequireAuth } from '@/lib/useRequireAuth'
 
 export default function CreatePage() {
-  const { ready } = useRequireAuth()
-
   useEffect(() => {
-    if (!ready) return
     initDemoData()
-  }, [ready])
+  }, [])
 
   return (
     <div className="min-h-screen px-4 py-6">
