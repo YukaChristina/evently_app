@@ -59,10 +59,10 @@ function LoginForm() {
       <div className="text-center mb-8">
         <p className="text-4xl mb-2">🔐</p>
         <h1 className="text-xl font-black" style={{ color: '#1a1a1a' }}>
-          ログイン
+          簡単ログイン
         </h1>
         <p className="text-sm mt-1" style={{ color: '#888' }}>
-          メールアドレスに確認コードを送信します
+          メールアドレスの登録だけで完了します
         </p>
       </div>
 
@@ -91,7 +91,7 @@ function LoginForm() {
         <form onSubmit={handleVerifyOtp} className="card">
           <p className="text-sm mb-4" style={{ color: '#555' }}>
             <span className="font-bold">{email}</span>{' '}
-            に送信した6桁のコードを入力してください
+            に送信した8桁のコードを入力してください
           </p>
           <input
             type="text"
