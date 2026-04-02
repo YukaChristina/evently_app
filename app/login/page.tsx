@@ -97,11 +97,11 @@ function LoginForm() {
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
-            maxLength={6}
+            maxLength={8}
             className="input-field mb-4 text-center text-2xl font-bold tracking-widest"
             value={otp}
             onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-            placeholder="000000"
+            placeholder="00000000"
             required
             autoFocus
           />
@@ -112,7 +112,7 @@ function LoginForm() {
           )}
           <button
             type="submit"
-            disabled={otp.length !== 6 || loading}
+            disabled={otp.length < 6 || loading}
             className="btn-primary"
           >
             {loading ? '確認中...' : 'ログイン'}
