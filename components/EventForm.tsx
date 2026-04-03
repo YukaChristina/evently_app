@@ -119,6 +119,7 @@ export default function EventForm() {
       return
     }
     await doCreateEvent()
+    setOtpVerifying(false)
   }
 
   async function doCreateEvent() {
@@ -250,8 +251,8 @@ export default function EventForm() {
       }
 
       router.push('/dashboard')
-    } catch {
-      setErrorMsg('エラーが発生しました。もう一度お試しください。')
+    } catch (err) {
+      setErrorMsg('エラーが発生しました：' + (err instanceof Error ? err.message : String(err)))
       setSubmitting(false)
     }
   }
