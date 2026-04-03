@@ -11,7 +11,7 @@ export default function EventForm() {
 
   const [form, setForm] = useState({
     title: '',
-    community: '異業種交流サークル',
+    community: '',
     dateStart: '',
     dateEnd: '',
     placePublic: '',
@@ -397,13 +397,13 @@ export default function EventForm() {
 
       <div>
         <label className="label">イベント名 *</label>
-        <input name="title" className="input-field" value={form.title} onChange={handleChange} placeholder="例：MBA卒業生 春の交流会2026" />
+        <input name="title" className="input-field" value={form.title} onChange={handleChange} placeholder="例：ビジネスネットワーキングの会" />
         {errors.title && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.title}</p>}
       </div>
 
       <div>
         <label className="label">コミュニティ名 *</label>
-        <input name="community" className="input-field" value={form.community} onChange={handleChange} placeholder="例：MBA同窓会" />
+        <input name="community" className="input-field" value={form.community} onChange={handleChange} placeholder="例：異業種交流サークル" />
         {errors.community && <p className="text-xs mt-1" style={{ color: '#ff4d4f' }}>{errors.community}</p>}
       </div>
 
