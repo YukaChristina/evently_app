@@ -4,23 +4,20 @@ import { useState } from 'react'
 import { supabase, getTestAccount, getDefaultCommunity, getOrCreateMember } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-function toDatetimeLocal(iso: string) {
-  return iso.slice(0, 16)
-}
 
 export default function EventForm() {
   const router = useRouter()
   const isDev = process.env.NEXT_PUBLIC_ENV === 'development'
 
   const [form, setForm] = useState({
-    title: 'ビジネスネットワーキング夜会 Vol.3',
-    community: 'MBA同窓会',
-    dateStart: toDatetimeLocal(new Date('2026-05-20T19:00').toISOString()),
-    dateEnd: toDatetimeLocal(new Date('2026-05-20T21:30').toISOString()),
-    placePublic: '六本木エリア',
-    place: '港区六本木4-5-6 タワー8F',
-    capacity: '30',
-    detail: '📍 港区六本木4-5-6 タワー8F ／ 💰 3,500円（当日精算）／ 🥂 軽食・ドリンク付き',
+    title: '',
+    community: '異業種交流サークル',
+    dateStart: '',
+    dateEnd: '',
+    placePublic: '',
+    place: '',
+    capacity: '',
+    detail: '',
   })
   const [reminderEnabled, setReminderEnabled] = useState(false)
   const [reminderTime, setReminderTime] = useState('09:00')
