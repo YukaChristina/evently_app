@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase, Member, markMessagesAsRead, getReadCounts, getAllEventMembers } from '@/lib/supabase'
+import { usePushSubscription } from '@/lib/usePushSubscription'
 
 type Message = {
   id: string
@@ -38,6 +39,7 @@ export default function ChatBox({ eventId, myMemberId, myName, onSend }: ChatBox
   const [readCounts, setReadCounts] = useState<Record<string, number>>({})
   const [totalMembers, setTotalMembers] = useState(0)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const { permission, subscribed, loading: pushLoading, subscribe } = usePushSubscription(myMemberId)
 
   // 既読を記録してカウントを再取得
   const recordReads = useCallback(async (msgs: Message[]) => {
@@ -144,6 +146,25 @@ export default function ChatBox({ eventId, myMemberId, myName, onSend }: ChatBox
     setInput('')
     setSending(false)
     onSend?.(body, myName ?? '不明')
+
+    // 自分以外の購読者にPush通知
+    const { data: subs } = await supabase
+      .from('push_subscriptions')
+      .select('subscription')
+      .neq('member_id', myMemberId)
+    if (subs && subs.length > 0) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      await fetch('/api/send-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subscriptions: subs.map((s) => s.subscription),
+          title: `💬 ${myName ?? '参加者'}さんからメッセージ`,
+          body: body.length > 50 ? body.slice(0, 50) + '...' : body,
+          url: `${origin}/chat/${eventId}`,
+        }),
+      })
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -215,6 +236,28 @@ export default function ChatBox({ eventId, myMemberId, myName, onSend }: ChatBox
         })}
         <div ref={bottomRef} />
       </div>
+
+      {/* Push通知許可ボタン */}
+      {!subscribed && permission !== 'denied' && (
+        <button
+          onClick={subscribe}
+          disabled={pushLoading}
+          className="w-full text-xs font-bold py-2 rounded-full mb-2"
+          style={{
+            background: '#fff9e6',
+            color: '#b8860b',
+            border: '1px solid #f0d060',
+            cursor: pushLoading ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {pushLoading ? '設定中...' : '🔔 新着メッセージの通知を受け取る'}
+        </button>
+      )}
+      {subscribed && (
+        <p className="text-xs text-center mb-2" style={{ color: '#06C755' }}>
+          🔔 通知オン
+        </p>
+      )}
 
       {/* Input */}
       <div className="flex gap-2 items-end">
