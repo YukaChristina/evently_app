@@ -325,38 +325,54 @@ export default function EventForm() {
           次回からは自動でログインされます。
         </div>
 
-        <form onSubmit={handleVerifyOtp} className="flex flex-col gap-3">
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={8}
-            className="input-field text-center text-2xl font-bold tracking-widest"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-            placeholder="00000000"
-            required
-            autoFocus
-          />
-          {otpError && (
-            <p className="text-xs" style={{ color: '#ff4d4f' }}>{otpError}</p>
-          )}
-          <button
-            type="submit"
-            disabled={otp.length < 6 || otpVerifying || submitting}
-            className="btn-primary"
-          >
-            {otpVerifying || submitting ? '確認中...' : '確認してイベントを作成する'}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setStep('email'); setOtp(''); setOtpError('') }}
-            className="text-xs text-center"
-            style={{ color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}
-          >
-            ← メールアドレスを変更する
-          </button>
-        </form>
+        {/* OTP認証済みでdoCreateEventが失敗した場合はそのまま再試行 */}
+        {errorMsg ? (
+          <div className="flex flex-col gap-3">
+            <div className="p-3 rounded-xl text-sm" style={{ background: '#fff0f0', color: '#ff4d4f' }}>
+              {errorMsg}
+            </div>
+            <button
+              onClick={() => doCreateEvent()}
+              disabled={submitting}
+              className="btn-primary"
+            >
+              {submitting ? '作成中...' : 'もう一度試す'}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleVerifyOtp} className="flex flex-col gap-3">
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={8}
+              className="input-field text-center text-2xl font-bold tracking-widest"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+              placeholder="00000000"
+              required
+              autoFocus
+            />
+            {otpError && (
+              <p className="text-xs" style={{ color: '#ff4d4f' }}>{otpError}</p>
+            )}
+            <button
+              type="submit"
+              disabled={otp.length < 6 || otpVerifying || submitting}
+              className="btn-primary"
+            >
+              {otpVerifying || submitting ? '確認中...' : '確認してイベントを作成する'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setStep('email'); setOtp(''); setOtpError('') }}
+              className="text-xs text-center"
+              style={{ color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              ← メールアドレスを変更する
+            </button>
+          </form>
+        )}
       </div>
     )
   }

@@ -257,38 +257,54 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
           次回からはメールアドレスを入力するだけで自動的にログインされます。
         </div>
 
-        <form onSubmit={handleVerifyOtp} className="flex flex-col gap-3">
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={8}
-            className="input-field text-center text-2xl font-bold tracking-widest"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-            placeholder="00000000"
-            required
-            autoFocus
-          />
-          {otpError && (
-            <p className="text-xs" style={{ color: '#ff4d4f' }}>{otpError}</p>
-          )}
-          <button
-            type="submit"
-            disabled={otp.length < 6 || otpVerifying}
-            className="btn-primary"
-          >
-            {otpVerifying ? '確認中...' : '確認して参加登録を完了する'}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setShowOtp(false); setOtp(''); setOtpError('') }}
-            className="text-xs text-center"
-            style={{ color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}
-          >
-            ← フォームに戻る
-          </button>
-        </form>
+        {/* OTP認証済みでdoRegisterが失敗した場合はそのまま再試行 */}
+        {errorMsg ? (
+          <div className="flex flex-col gap-3">
+            <div className="p-3 rounded-xl text-sm" style={{ background: '#fff0f0', color: '#ff4d4f' }}>
+              {errorMsg}
+            </div>
+            <button
+              onClick={() => doRegister()}
+              disabled={submitting}
+              className="btn-primary"
+            >
+              {submitting ? '登録中...' : 'もう一度試す'}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleVerifyOtp} className="flex flex-col gap-3">
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={8}
+              className="input-field text-center text-2xl font-bold tracking-widest"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+              placeholder="00000000"
+              required
+              autoFocus
+            />
+            {otpError && (
+              <p className="text-xs" style={{ color: '#ff4d4f' }}>{otpError}</p>
+            )}
+            <button
+              type="submit"
+              disabled={otp.length < 6 || otpVerifying}
+              className="btn-primary"
+            >
+              {otpVerifying ? '確認中...' : '確認して参加登録を完了する'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowOtp(false); setOtp(''); setOtpError('') }}
+              className="text-xs text-center"
+              style={{ color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              ← フォームに戻る
+            </button>
+          </form>
+        )}
       </div>
     )
   }
