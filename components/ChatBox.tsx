@@ -175,7 +175,7 @@ export default function ChatBox({ eventId, myMemberId, myName, onSend }: ChatBox
   }
 
   return (
-    <div className="flex flex-col" style={{ height: '60vh', minHeight: '300px' }}>
+    <div className="flex flex-col" style={{ height: '100%' }}>
       {/* Messages */}
       <div
         className="flex-1 overflow-y-auto flex flex-col gap-3 p-3 rounded-2xl mb-3"

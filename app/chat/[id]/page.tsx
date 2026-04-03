@@ -109,11 +109,11 @@ export default function ChatPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5' }}>
-      <div style={{ maxWidth: 480, margin: '0 auto', padding: '0 0 40px' }}>
+    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: '#f5f5f5' }}>
+      <div style={{ maxWidth: 480, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* Header */}
         <div
-          className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
+          className="flex-shrink-0 px-4 py-3 flex items-center gap-3"
           style={{ background: '#06C755' }}
         >
           <button
@@ -140,7 +140,7 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div className="px-4 pt-4">
+        <div className="flex-1 px-4 pt-4 overflow-hidden">
           {myMember && (
             <ChatBox
               eventId={id}
