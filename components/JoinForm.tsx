@@ -143,7 +143,7 @@ export default function JoinForm({ eventId, isFull }: JoinFormProps) {
     })
 
     if (error) {
-      setOtpError('コードが正しくありません。もう一度お試しください。')
+      setOtpError(`認証エラー：${error.message}`)
       setOtpVerifying(false)
       return
     }
