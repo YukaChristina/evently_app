@@ -9,6 +9,7 @@
 - データ保存：Supabase（PostgreSQL + Realtime）
 - 認証：Supabase Auth（メールOTP／パスワードレス）
 - メール送信：Resend API（未設定時はコンソールログのみ）
+- Push通知：Web Push（web-pushパッケージ・VAPIDキー使用）
 - デプロイ：Vercel（GitHub連携、ブランチ：master）
 
 ## ディレクトリ構成
@@ -22,20 +23,22 @@ evently_app/
 │   ├── event/[id]/page.tsx    # イベント詳細ページ（公開・ロール別表示）
 │   ├── join/[id]/page.tsx     # 参加申込画面（認証不要・送信時にインラインOTP）
 │   ├── join-done/page.tsx     # 参加確定画面
-│   ├── chat/[id]/page.tsx     # 参加者チャット画面（認証保護済み）
+│   ├── chat/[id]/page.tsx     # 参加者チャット画面（認証保護済み・入力欄画面下部固定）
 │   ├── api/send-email/route.ts # メール送信API（Resend）
+│   ├── api/send-push/route.ts  # Web Push送信API（web-push）
 │   └── layout.tsx             # 共通レイアウト（Header + TestLoginBar）
 ├── components/
 │   ├── Header.tsx             # 共通ヘッダー（ロゴ・マイイベントリンク・ログアウトボタン）
 │   ├── TestLoginBar.tsx       # 開発環境専用テストアカウント切替バー
-│   ├── EventForm.tsx          # イベント作成フォーム（日時自動補完・リマインダー・インラインOTP）
+│   ├── EventForm.tsx          # イベント作成フォーム（日時自動補完・リマインダー・インラインOTP・名前入力）
 │   ├── JoinForm.tsx           # 参加申込フォーム（auth情報から自動入力・インラインOTP）
-│   ├── ChatBox.tsx            # チャットUI（Realtime購読・既読件数表示）
+│   ├── ChatBox.tsx            # チャットUI（Realtime購読・既読件数・Push通知登録ボタン）
 │   ├── ParticipantList.tsx    # 参加者一覧
 │   └── StatusBar.tsx          # 残席数バー
 └── lib/
     ├── supabase.ts            # Supabaseクライアント・DB型定義・ヘルパー関数群
     ├── useRequireAuth.ts      # 認証保護hook（未ログイン→/loginへリダイレクト）
+    ├── usePushSubscription.ts # Push通知購読管理hook
     └── testAccounts.ts        # 開発用テストアカウント定義（幹事2名・参加者10名）
 ```
 
@@ -44,13 +47,18 @@ evently_app/
 ユーザーにログインを意識させない。フォーム送信のタイミングで初めて認証を求める。
 
 ### 認証が発生するタイミング
-- **イベント作成**（EventForm）：送信ボタン押下時、未ログインなら「メアド入力 → 8桁OTP入力」をフォーム内にインライン表示
+- **イベント作成**（EventForm）：送信ボタン押下時、未ログインなら「名前・メアド入力 → 8桁OTP入力」をフォーム内にインライン表示
 - **参加申込**（JoinForm）：送信ボタン押下時、未ログインならフォームのメアドにOTPを自動送信し、インラインでコード入力を表示
 - **ダッシュボード直アクセス**（/dashboard）：`useRequireAuth` により /login にリダイレクト
 - **チャット直アクセス**（/chat/[id]）：`useRequireAuth` により /login にリダイレクト
 
 ### 初回ログインメッセージ
 OTPステップでは「この確認は、このアプリを初めて使う今回だけです。次回からは自動でログインされます。」と表示。
+
+### セッション管理
+- `persistSession: true` + localStorage保存でセッションを維持
+- refresh tokenにより自動延長（JWTは24時間・Supabase無料プランの上限）
+- 明示的にログアウトしない限り再ログイン不要
 
 ### 開発環境
 `NEXT_PUBLIC_ENV=development` のときはテストアカウントを使用し、OTP認証をバイパス。
@@ -66,12 +74,17 @@ NEXT_PUBLIC_SUPABASE_URL        # Supabase プロジェクトURL
 NEXT_PUBLIC_SUPABASE_ANON_KEY   # Supabase anon key
 NEXT_PUBLIC_ENV                 # "development" のみテストアカウント有効
 RESEND_API_KEY                  # メール送信（未設定時はモック動作）
+NEXT_PUBLIC_VAPID_PUBLIC_KEY    # Web Push VAPIDパブリックキー
+VAPID_PRIVATE_KEY               # Web Push VAPIDプライベートキー
+VAPID_SUBJECT                   # Web Push送信者識別子（例：mailto:xxx@example.com）
 ```
 
 ## Supabase設定
 - Authentication → URL Configuration → Site URL：本番URL（https://evently-lac-chi.vercel.app/）
-- Authentication → Email Templates → Magic Link：`{{ .Token }}` で8桁コードを表示するテンプレートに変更済み
+- Authentication → Email Templates → Magic Link：`{{ .Token }}` のみ表示（マジックリンク削除済み）
+  - OTPコードは4桁+4桁で表示（Outlookの電話番号誤認識対策）
 - OTPは8桁（Supabaseデフォルト）
+- JWT有効期限：86400秒（24時間・無料プランの上限）
 
 ## Supabaseテーブル構成
 ```
@@ -83,7 +96,16 @@ chat_messages     # チャット（event_id, member_id, body, sent_at）
 chat_reads        # 既読管理（message_id, member_id）
 announcements     # お知らせ（event_id, member_id, title, body, is_pinned）
 reminders         # リマインダー設定（event_id, remind_at）
+push_subscriptions # Push通知購読（member_id UNIQUE, subscription jsonb）
 ```
+
+## Web Push通知
+- チャットメッセージ送信時、自分以外の購読者全員にPushを送信
+- チャット画面に「🔔 新着メッセージの通知を受け取る」ボタンを表示
+- 購読情報は `push_subscriptions` テーブルに保存（member_idでUPSERT）
+- **iOSのSafariは不安定**（iOS 16.4以降・PWA必須・バックグラウンド配信はOS制御）
+- AndroidのChromeは安定して動作
+- iOSユーザーへはメール通知で補完する運用
 
 ## ダッシュボード（/dashboard）の表示ロジック
 - 幹事のイベント：フルカード（参加者一覧・LINE文面コピー・お知らせ送信・削除）
@@ -114,30 +136,24 @@ reminders         # リマインダー設定（event_id, remind_at）
 テーブル作成後に必ずRLSポリシーを設定すること。未設定だと全アクセスが拒否される（406/403エラー）。
 
 ```sql
--- communities
-CREATE POLICY "communities_select" ON communities FOR SELECT USING (true);
-CREATE POLICY "communities_insert" ON communities FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- 各テーブル共通パターン
+CREATE POLICY "{table}_select" ON {table} FOR SELECT USING (true);
+CREATE POLICY "{table}_insert" ON {table} FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
--- members
-CREATE POLICY "members_select" ON members FOR SELECT USING (true);
-CREATE POLICY "members_insert" ON members FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- membersのみUPDATEも必要
 CREATE POLICY "members_update" ON members FOR UPDATE USING (auth.role() = 'authenticated');
 
--- events
-CREATE POLICY "events_select" ON events FOR SELECT USING (true);
-CREATE POLICY "events_insert" ON events FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
--- event_members
-CREATE POLICY "event_members_select" ON event_members FOR SELECT USING (true);
-CREATE POLICY "event_members_insert" ON event_members FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- push_subscriptionsはUPSERT用にUPDATEも必要
+CREATE POLICY "push_subscriptions_upsert" ON push_subscriptions FOR UPDATE USING (auth.role() = 'authenticated');
 ```
 
+設定済みテーブル：communities / members / events / event_members / chat_messages / chat_reads / announcements / reminders / push_subscriptions
+
 **トラブルシューティング実績（2026-04-03）**
-- 症状：OTP認証成功後にイベント作成が失敗、コンソールに406/403
-- 原因：RLSポリシー未設定
+- 症状：OTP認証成功後にDB操作が失敗、コンソールに406/403
+- 原因：RLSポリシー未設定。認証追加により初めてINSERTが発生し顕在化
 - 確認方法：Supabase Auth Logs → `/verify` が200なのに `/rest/v1/テーブル名` が406ならRLSが原因
 
 ## 未実装機能（今後のスコープ）
-- Web Push通知
 - リマインダーの実際の送信処理（cron等）
 - 複数コミュニティ対応
