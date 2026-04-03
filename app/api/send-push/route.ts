@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import webpush from 'web-push'
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:example@example.com',
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '',
-  process.env.VAPID_PRIVATE_KEY || ''
-)
-
 export async function POST(req: NextRequest) {
+  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  const privateKey = process.env.VAPID_PRIVATE_KEY
+  const subject = process.env.VAPID_SUBJECT || 'mailto:example@example.com'
+
+  if (!publicKey || !privateKey) {
+    console.warn('VAPID keys not configured, skipping push')
+    return NextResponse.json({ ok: true, sent: 0 })
+  }
+
+  webpush.setVapidDetails(subject, publicKey, privateKey)
   const { subscriptions, title, body, url } = await req.json()
 
   if (!subscriptions || subscriptions.length === 0) {
