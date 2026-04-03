@@ -110,6 +110,33 @@ reminders         # リマインダー設定（event_id, remind_at）
 - 本番環境ではTestLoginBarは非表示・テストアカウントは一切使わない
 - デプロイはVercel、ブランチ `master`
 
+## Supabase RLSポリシー設定（重要）
+テーブル作成後に必ずRLSポリシーを設定すること。未設定だと全アクセスが拒否される（406/403エラー）。
+
+```sql
+-- communities
+CREATE POLICY "communities_select" ON communities FOR SELECT USING (true);
+CREATE POLICY "communities_insert" ON communities FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+-- members
+CREATE POLICY "members_select" ON members FOR SELECT USING (true);
+CREATE POLICY "members_insert" ON members FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "members_update" ON members FOR UPDATE USING (auth.role() = 'authenticated');
+
+-- events
+CREATE POLICY "events_select" ON events FOR SELECT USING (true);
+CREATE POLICY "events_insert" ON events FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+-- event_members
+CREATE POLICY "event_members_select" ON event_members FOR SELECT USING (true);
+CREATE POLICY "event_members_insert" ON event_members FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+```
+
+**トラブルシューティング実績（2026-04-03）**
+- 症状：OTP認証成功後にイベント作成が失敗、コンソールに406/403
+- 原因：RLSポリシー未設定
+- 確認方法：Supabase Auth Logs → `/verify` が200なのに `/rest/v1/テーブル名` が406ならRLSが原因
+
 ## 未実装機能（今後のスコープ）
 - Web Push通知
 - リマインダーの実際の送信処理（cron等）
