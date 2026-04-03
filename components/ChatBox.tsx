@@ -148,13 +148,14 @@ export default function ChatBox({ eventId, myMemberId, myName, onSend }: ChatBox
     onSend?.(body, myName ?? '不明')
 
     // 自分以外の購読者にPush通知
-    const { data: subs } = await supabase
+    const { data: subs, error: subError } = await supabase
       .from('push_subscriptions')
       .select('subscription')
       .neq('member_id', myMemberId)
+    console.log('[Push] subscriptions:', subs, 'error:', subError)
     if (subs && subs.length > 0) {
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
-      await fetch('/api/send-push', {
+      const res = await fetch('/api/send-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -164,6 +165,10 @@ export default function ChatBox({ eventId, myMemberId, myName, onSend }: ChatBox
           url: `${origin}/chat/${eventId}`,
         }),
       })
+      const result = await res.json()
+      console.log('[Push] send result:', result)
+    } else {
+      console.log('[Push] no subscriptions found')
     }
   }
 
