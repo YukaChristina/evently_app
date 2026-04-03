@@ -31,6 +31,7 @@ export default function EventForm() {
   // 認証ステップ
   const [step, setStep] = useState<'form' | 'email' | 'otp'>('form')
   const [organizerEmail, setOrganizerEmail] = useState('')
+  const [organizerName, setOrganizerName] = useState('')
   const [sendingOtp, setSendingOtp] = useState(false)
   const [otp, setOtp] = useState('')
   const [otpError, setOtpError] = useState('')
@@ -157,7 +158,7 @@ export default function EventForm() {
           return
         }
         email = user.email
-        name = user.email.split('@')[0]
+        name = organizerName.trim() || user.email.split('@')[0]
       }
 
       // コミュニティを取得または作成
@@ -277,7 +278,19 @@ export default function EventForm() {
 
         <form onSubmit={handleSendOtp} className="flex flex-col gap-3">
           <div>
-            <label className="label">メールアドレス</label>
+            <label className="label">お名前 *</label>
+            <input
+              type="text"
+              className="input-field"
+              value={organizerName}
+              onChange={(e) => setOrganizerName(e.target.value)}
+              placeholder="例：山本 花子"
+              required
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="label">メールアドレス *</label>
             <input
               type="email"
               className="input-field"
@@ -285,13 +298,12 @@ export default function EventForm() {
               onChange={(e) => setOrganizerEmail(e.target.value)}
               placeholder="your@email.com"
               required
-              autoFocus
             />
           </div>
           {errorMsg && (
             <p className="text-xs" style={{ color: '#ff4d4f' }}>{errorMsg}</p>
           )}
-          <button type="submit" disabled={!organizerEmail || sendingOtp} className="btn-primary">
+          <button type="submit" disabled={!organizerEmail || !organizerName || sendingOtp} className="btn-primary">
             {sendingOtp ? '送信中...' : '確認コードを送る'}
           </button>
           <button
