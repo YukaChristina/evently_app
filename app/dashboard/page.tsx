@@ -4,16 +4,15 @@ import { useEffect, useState } from 'react'
 import {
   supabase,
   initDemoData,
-  getDefaultCommunity,
-  getCurrentMember,
-  getOrganizerEvents,
-  getParticipantEvents,
+  getTestAccount,
   getEventParticipants,
   formatDateJa,
   Event,
   Member,
   EventMember,
 } from '@/lib/supabase'
+
+const isDev = process.env.NEXT_PUBLIC_ENV === 'development'
 import Link from 'next/link'
 import { useRequireAuth } from '@/lib/useRequireAuth'
 
@@ -46,6 +45,7 @@ type ParticipantWithMember = EventMember & { member: Member }
 type EventWithParticipants = {
   event: Event
   participants: ParticipantWithMember[]
+  organizerMemberId: string
 }
 
 // アナウンス投稿フォーム
@@ -462,31 +462,76 @@ export default function DashboardPage() {
   const [expandedParticipants, setExpandedParticipants] = useState<Set<string>>(new Set())
   const [showAnnouncement, setShowAnnouncement] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [currentMember, setCurrentMember] = useState<Member | null>(null)
+  const [, setCurrentMember] = useState<Member | null>(null)
 
   async function load() {
     await initDemoData()
 
-    const community = await getDefaultCommunity()
-    if (!community) { setLoading(false); return }
-
-    const member = await getCurrentMember(community.id)
-    if (!member) { setLoading(false); return }
-
-    setCurrentMember(member)
-
-    // 幹事イベント
-    const orgEvents = await getOrganizerEvents(member.id)
-    const orgResult: EventWithParticipants[] = []
-    for (const event of orgEvents) {
-      const participants = await getEventParticipants(event.id)
-      orgResult.push({ event, participants })
+    // メールアドレスを取得（dev: テストアカウント / 本番: Supabase Auth）
+    let email: string | null = null
+    if (isDev) {
+      const account = getTestAccount()
+      email = account?.email ?? null
+    } else {
+      const { data: { user } } = await supabase.auth.getUser()
+      email = user?.email ?? null
     }
-    setOrganizerData(orgResult)
+    if (!email) { setLoading(false); return }
 
-    // 参加者イベント
-    const partEvents = await getParticipantEvents(member.id)
-    setParticipantEvents(partEvents)
+    // このユーザーが所属する全コミュニティのメンバーレコードを取得
+    const { data: allMembers } = await supabase
+      .from('members')
+      .select('*')
+      .eq('email', email)
+
+    if (!allMembers || allMembers.length === 0) { setLoading(false); return }
+
+    // 代表メンバー（お知らせ投稿などに使用）
+    setCurrentMember(allMembers[0] as Member)
+
+    const allMemberIds = allMembers.map((m) => m.id)
+
+    // 幹事の event_members を取得
+    const { data: orgEMs } = await supabase
+      .from('event_members')
+      .select('event_id, member_id')
+      .in('member_id', allMemberIds)
+      .eq('role', 'organizer')
+
+    if (orgEMs && orgEMs.length > 0) {
+      const orgEventIds = orgEMs.map((em) => em.event_id)
+      const { data: orgEventsData } = await supabase
+        .from('events')
+        .select('*')
+        .in('id', orgEventIds)
+        .order('created_at', { ascending: false })
+
+      const orgResult: EventWithParticipants[] = []
+      for (const event of (orgEventsData ?? [])) {
+        const participants = await getEventParticipants(event.id)
+        // このイベントの幹事メンバーIDを特定
+        const em = orgEMs.find((x) => x.event_id === event.id)
+        orgResult.push({ event: event as Event, participants, organizerMemberId: em?.member_id ?? allMemberIds[0] })
+      }
+      setOrganizerData(orgResult)
+    }
+
+    // 参加者の event_members を取得
+    const { data: partEMs } = await supabase
+      .from('event_members')
+      .select('event_id')
+      .in('member_id', allMemberIds)
+      .eq('role', 'participant')
+
+    if (partEMs && partEMs.length > 0) {
+      const partEventIds = partEMs.map((em) => em.event_id)
+      const { data: partEventsData } = await supabase
+        .from('events')
+        .select('*')
+        .in('id', partEventIds)
+        .order('date_start', { ascending: true })
+      setParticipantEvents((partEventsData ?? []) as Event[])
+    }
 
     setLoading(false)
   }
@@ -589,12 +634,12 @@ export default function DashboardPage() {
                 🔑 幹事として担当するイベント（{organizerData.length}件）
               </p>
               <div className="flex flex-col gap-4">
-                {organizerData.map(({ event, participants }) => (
+                {organizerData.map(({ event, participants, organizerMemberId }) => (
                   <OrganizerEventCard
                     key={event.id}
                     event={event}
                     participants={participants}
-                    currentMemberId={currentMember?.id ?? ''}
+                    currentMemberId={organizerMemberId}
                     copied={copied}
                     copiedLine={copiedLine}
                     confirmDelete={confirmDelete}

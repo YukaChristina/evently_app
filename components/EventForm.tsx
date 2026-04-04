@@ -123,6 +123,7 @@ export default function EventForm() {
   async function doCreateEvent() {
     setSubmitting(true)
     setErrorMsg('')
+    console.log('[Create] doCreateEvent start')
 
     try {
       // 幹事のメアドと名前を取得
@@ -148,7 +149,8 @@ export default function EventForm() {
           avatar_color: account.avatar_color,
         }
       } else {
-        const { data: { user } } = await supabase.auth.getUser()
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        console.log('[Create] auth user:', user?.email, 'authError:', authError?.message)
         if (!user?.email) {
           setErrorMsg('ログインが必要です')
           setSubmitting(false)
@@ -158,18 +160,25 @@ export default function EventForm() {
         name = organizerName.trim() || user.email.split('@')[0]
       }
 
+      console.log('[Create] email:', email, 'name:', name)
+
       // コミュニティを取得または作成
       let community = await getDefaultCommunity()
+      console.log('[Create] defaultCommunity:', community?.name)
+
       if (!community || community.name !== form.community.trim()) {
-        const { data: found } = await supabase
+        const { data: found, error: findError } = await supabase
           .from('communities')
           .select('*')
           .ilike('name', form.community.trim())
-          .single()
+          .maybeSingle()
+
+        console.log('[Create] community search found:', found?.name, 'findError:', findError?.message)
 
         if (found) {
           community = found
         } else {
+          console.log('[Create] creating new community:', form.community.trim())
           const { data: created, error: communityError } = await supabase
             .from('communities')
             .insert({
@@ -180,6 +189,7 @@ export default function EventForm() {
             })
             .select()
             .single()
+          console.log('[Create] community created:', created?.id, 'error:', communityError?.message)
           if (communityError) {
             setErrorMsg('コミュニティの作成に失敗しました：' + communityError.message)
             setSubmitting(false)
@@ -195,12 +205,16 @@ export default function EventForm() {
         return
       }
 
+      console.log('[Create] using community:', community.id, community.name)
+
       // 幹事メンバーを取得または作成
       const member = await getOrCreateMember(community.id, {
         name,
         email,
         ...extraFields,
       })
+
+      console.log('[Create] member:', member?.id, member?.name)
 
       if (!member) {
         setErrorMsg('メンバー情報の取得に失敗しました')
@@ -209,6 +223,7 @@ export default function EventForm() {
       }
 
       // イベント作成
+      console.log('[Create] inserting event...')
       const { data: event, error: eventError } = await supabase
         .from('events')
         .insert({
@@ -225,18 +240,21 @@ export default function EventForm() {
         .select()
         .single()
 
+      console.log('[Create] event insert result:', event?.id, 'error:', eventError?.message)
+
       if (eventError || !event) {
-        setErrorMsg('イベントの作成に失敗しました: ' + (eventError?.message || ''))
+        setErrorMsg('イベントの作成に失敗しました: ' + (eventError?.message ?? 'データなし'))
         setSubmitting(false)
         return
       }
 
       // 幹事としてevent_membersに登録
-      await supabase.from('event_members').insert({
+      const { error: emError } = await supabase.from('event_members').insert({
         event_id: event.id,
         member_id: member.id,
         role: 'organizer',
       })
+      console.log('[Create] event_member insert error:', emError?.message)
 
       // リマインド登録
       if (reminderEnabled && form.dateStart) {
@@ -253,8 +271,10 @@ export default function EventForm() {
         })
       }
 
+      console.log('[Create] done, redirecting to /dashboard')
       router.push('/dashboard')
     } catch (err) {
+      console.error('[Create] caught error:', err)
       setErrorMsg('エラーが発生しました：' + (err instanceof Error ? err.message : String(err)))
       setSubmitting(false)
     }
