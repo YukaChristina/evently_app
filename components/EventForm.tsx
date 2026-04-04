@@ -170,16 +170,21 @@ export default function EventForm() {
         if (found) {
           community = found
         } else {
-          const { data: created } = await supabase
+          const { data: created, error: communityError } = await supabase
             .from('communities')
             .insert({
               name: form.community.trim(),
-              slug: form.community.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '') + '-' + Date.now(),
+              slug: 'community-' + Date.now(),
               admin_email: email,
               is_private: true,
             })
             .select()
             .single()
+          if (communityError) {
+            setErrorMsg('コミュニティの作成に失敗しました：' + communityError.message)
+            setSubmitting(false)
+            return
+          }
           community = created
         }
       }
