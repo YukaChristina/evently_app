@@ -565,7 +565,12 @@ export default function DashboardPage() {
     await supabase.from('event_members').delete().eq('event_id', eventId)
     await supabase.from('chat_messages').delete().eq('event_id', eventId)
     await supabase.from('announcements').delete().eq('event_id', eventId)
-    await supabase.from('events').delete().eq('id', eventId)
+    const { error } = await supabase.from('events').delete().eq('id', eventId)
+    if (error) {
+      alert('削除に失敗しました：' + error.message)
+      setConfirmDelete(null)
+      return
+    }
     setConfirmDelete(null)
     setOrganizerData((prev) => prev.filter((d) => d.event.id !== eventId))
   }
