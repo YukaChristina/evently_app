@@ -66,7 +66,16 @@ function LoginForm() {
           簡単ログイン
         </h1>
         <p className="text-sm mt-1" style={{ color: '#888' }}>
-          メールアドレスの登録だけで完了します
+          パスワード不要。メールアドレスだけでログインできます。
+        </p>
+      </div>
+
+      <div className="card mb-4" style={{ background: '#f0f9f4', border: '1px solid #b7e4c7' }}>
+        <p className="text-sm font-bold mb-1" style={{ color: '#1a7a3c' }}>
+          はじめての方も、以前使ったことがある方も同じ手順です
+        </p>
+        <p className="text-xs" style={{ color: '#3a7a52', lineHeight: 1.7 }}>
+          メールアドレスを入力すると確認コードが届きます。同じメールアドレスを使えば、いつでも同じアカウントにアクセスできます。
         </p>
       </div>
 
